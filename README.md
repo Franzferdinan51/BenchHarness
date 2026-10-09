@@ -27,7 +27,7 @@ tools share one setup.
 | `hle-tools` | reasoning | wired — HLE + sandboxed `run_python` tool loop |
 | `gpqa-diamond` | reasoning | wired — `Idavidrein/gpqa`, exact-letter grading |
 | `mcp-atlas` | agentic | wired — fidelity ladder: real MCP tool loop + claim judge via agent-environment when up (else GTFA recall) |
-| `toolathlon` | agentic | wired — official remote service, private mode (108 Verified tasks, acc; one job at a time on the public service) |
+| `toolathlon` | agentic | wired — official remote service, private mode (108 Verified tasks, acc; path proven end-to-end incl. WS relay; one job at a time on the public service) |
 | `widesearch` | agentic | wired — `ByteDance-Seed/WideSearch`, column recall (cell judge next) |
 | `browsecomp` | agentic | wired — decrypted `smolagents/browse_comp`, containment (LLM grader next) |
 | `claweval` | agentic | wired — EvalScope pinned official runner (300 tasks, Pass³ via `BENCH_CLAW_TRIALS=3`; live trial deferred to GPU-free) |
