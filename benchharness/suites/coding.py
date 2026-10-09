@@ -370,10 +370,10 @@ class DeepSweAdapter(SuiteAdapter):
 
 class FrontierBenchAdapter(SuiteAdapter):
     """Frontier-Bench v0.1: Anthropic-reported agentic coding numbers (Opus 5
-    at 43.3%) with no public dataset or harness as of iteration 10.
-    Aggregators tie it to the Harbor/TB team line (frontierbench.ai now
-    redirects to tbench.ai; TB 4.0 is the live successor), but no
-    CLI-downloadable Frontier dataset exists. Stays scaffold; re-check
+    at 43.3%) with no public dataset or harness as of iteration 14
+    (Harbor Hub re-checked: 340 datasets, no frontier entry; TB4 line
+    continues via ryanmarten/tb4-preview, not Frontier itself).
+    frontierbench.ai redirects to tbench.ai. Stays scaffold; re-check
     the Harbor registry + tbench.ai each iteration."""
 
     name = "frontier-bench"

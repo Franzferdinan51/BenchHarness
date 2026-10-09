@@ -47,19 +47,56 @@ class EvalScopeOutcome:
     error: str = ""
 
 
+LIST_TASKS_SCRIPT = r"""
+import json, sys
+
+benchmark = sys.argv[1]
+if benchmark == "toolathlon":
+    from evalscope.benchmarks.toolathlon.toolathlon_adapter import DEFAULT_TASK_LIST
+    print("BENCH_TASKS_JSON:" + json.dumps(list(DEFAULT_TASK_LIST)))
+else:
+    raise SystemExit(f"no bundled task list for {benchmark}")
+"""
+
+
+def list_bundled_tasks(benchmark: str, timeout_secs: float = 120.0) -> list[str]:
+    """Task ids bundled with an EvalScope adapter (no model calls)."""
+    try:
+        proc = subprocess.run([str(evalscope_python()), "-c", LIST_TASKS_SCRIPT,
+                               benchmark], capture_output=True, text=True,
+                              timeout=timeout_secs)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    for line in (proc.stdout or "").splitlines():
+        if line.startswith("BENCH_TASKS_JSON:"):
+            try:
+                ids = json.loads(line[len("BENCH_TASKS_JSON:"):])
+                return [str(t) for t in ids]
+            except ValueError:
+                return []
+    return []
+
+
 DRIVER_SCRIPT = r"""
 import glob, json, os, sys
 
 benchmark, task_id, split, model, api_base, api_key, trials, work_dir = sys.argv[1:9]
+extra_json = sys.argv[9] if len(sys.argv) > 9 else "{}"
 trials = int(trials)
+try:
+    extra_params = dict(json.loads(extra_json))
+except ValueError:
+    extra_params = {}
 
 from evalscope import run_task
 from evalscope.config import TaskConfig
 
-dataset_args = {benchmark: {"extra_params": {"task_ids": [task_id]}}}
+dataset_args = {benchmark: {"extra_params": dict(extra_params)}}
 if benchmark == "claw_eval":
     dataset_args[benchmark]["subset_list"] = [split]
+    dataset_args[benchmark]["extra_params"]["task_ids"] = [task_id]
 if benchmark == "deep_swe":
+    dataset_args[benchmark]["extra_params"]["task_ids"] = [task_id]
     dataset_args[benchmark]["extra_params"]["pier_agent_kwargs"] = {"model_class": "litellm"}
 
 cfg = TaskConfig(
@@ -113,6 +150,7 @@ def run_one(
     trials: int = 1,
     work_dir: Path | None = None,
     timeout_secs: float = 3600.0,
+    extra_params: dict | None = None,
 ) -> EvalScopeOutcome:
     """Run one benchmark task via EvalScope; parse the returned report."""
     import uuid as _uuid
@@ -121,7 +159,8 @@ def run_one(
     dest = (work_dir or Path.cwd()) / f"evalscope-{benchmark}-{safe}-{_uuid.uuid4().hex[:6]}"
     dest.mkdir(parents=True, exist_ok=True)
     cmd = [str(evalscope_python()), "-c", DRIVER_SCRIPT, benchmark, task_id,
-           split, model, api_base, api_key, str(trials), str(dest)]
+           split, model, api_base, api_key, str(trials), str(dest),
+           json.dumps(extra_params or {})]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True,
                               timeout=timeout_secs)

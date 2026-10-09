@@ -209,29 +209,57 @@ class McpAtlasAdapter(SuiteAdapter):
 
 
 class ToolathlonAdapter(SuiteAdapter):
-    """Toolathlon / Tool Decathlon (hkust-nlp/Toolathlon, ICLR 2026).
-
-    108 tasks across 32 apps / 604 tools with execution-based grading in
-    realistic envs; trajectories dataset is gated. Deferred until the
-    app-environment driver lands.
-    """
+    """Toolathlon-Verified via the official remote eval service (private
+    mode): EvalScope submits one job per task and relays the service's
+    model calls back to LM Studio over a local WebSocket proxy, so no
+    model traffic leaves the machine. 108 Verified tasks across 32
+    MCP-backed apps; the official scorer reports acc per task."""
 
     name = "toolathlon"
     category = "agentic"
-    description = "Toolathlon-Verified (hkust-nlp/Toolathlon, env driver pending)"
-    source = "github.com/hkust-nlp/Toolathlon + toolathlon.xyz"
-    status = "scaffold"
+    description = "Toolathlon-Verified (official remote service, 108 tasks)"
+    source = "hkust-nlp/Toolathlon official service via EvalScope toolathlon"
+    status = "wired"
 
     def requirements(self):
-        return [Requirement("cli", "docker", "app environments")]
+        return [Requirement("evalscope", "toolathlon",
+                            "isolated EvalScope venv (toolathlon wrapper)")]
 
     def tasks(self, limit=None):
-        return [Task(task_id="env-driver-pending", prompt="", reference="",
-                     metadata={"skip_reason": "Toolathlon app-env driver lands "
-                               "in iteration 4 (hkust-nlp/Toolathlon)"})]
+        from benchharness.evalscope_driver import list_bundled_tasks
+
+        ids = list_bundled_tasks("toolathlon")
+        if not ids:
+            return [Task(task_id="missing-evalscope", prompt="", reference="",
+                         metadata={"skip_reason": "EvalScope venv missing; see "
+                                   "README EvalScope notes"})]
+        out = [Task(task_id=i, prompt=f"Toolathlon-Verified task: {i}",
+                    reference="", metadata={}) for i in ids]
+        return out[:limit] if limit else out
 
     def score(self, output, task):
-        return Score(passed=False, details="scaffold: env driver pending")
+        return Score(passed=False, details="toolathlon service trial (see run_external)")
+
+    def run_external(self, task, ctx):
+        import os as _os
+
+        from benchharness.evalscope_driver import run_one
+
+        config = ctx.get("config")
+        model = str(ctx.get("model", ""))
+        timeout = float(getattr(config, "evalscope_timeout_secs", 5400.0))
+        oc = run_one(
+            "toolathlon", task.task_id, model=model,
+            api_base=getattr(config, "base_url", "http://127.0.0.1:1234/v1"),
+            api_key=getattr(config, "api_key", "lm-studio"),
+            trials=1, workdir=ctx["workdir"], timeout_secs=timeout,
+            extra_params={"task_list": [task.task_id]},
+        )
+        output = f"toolathlon job trace={oc.trace_path}"
+        if oc.error:
+            return output, Score(passed=False, score=0.0,
+                                 details=f"{oc.details} [{oc.error}]")
+        return output, Score(passed=oc.passed, score=oc.score, details=oc.details)
 
 
 class HermesBenchAdapter(SuiteAdapter):

@@ -168,6 +168,81 @@ def test_deepswe_run_external_uses_driver(tmp_path, monkeypatch):
     assert not score.passed and score.score == 0.0
 
 
+def test_list_bundled_tasks_parses_ids(monkeypatch):
+    import subprocess
+
+    import benchharness.evalscope_driver as driver
+
+    class FakeProc:
+        returncode = 0
+        stdout = 'BENCH_TASKS_JSON:["a", "b"]\n'
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: FakeProc())
+    assert driver.list_bundled_tasks("toolathlon") == ["a", "b"]
+
+
+def test_list_bundled_tasks_empty_on_failure(monkeypatch):
+    import subprocess
+
+    import benchharness.evalscope_driver as driver
+
+    def boom(*a, **k):
+        raise OSError("nope")
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert driver.list_bundled_tasks("toolathlon") == []
+
+
+def test_run_one_forwards_extra_params(tmp_path, monkeypatch):
+    import subprocess
+
+    import benchharness.evalscope_driver as driver
+
+    class FakeProc:
+        returncode = 0
+        stdout = 'BENCH_SAMPLES_JSON:[{"value": {"acc": 1.0}, "metadata": {}}]\n'
+        stderr = ""
+
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        return FakeProc()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    oc = driver.run_one("toolathlon", "ab-testing", model="m", api_base="u",
+                        api_key="k", work_dir=tmp_path,
+                        extra_params={"task_list": ["ab-testing"]})
+    assert oc.passed
+    assert json.loads(seen["cmd"][-1]) == {"task_list": ["ab-testing"]}
+
+
+def test_toolathlon_tasks_and_run_external(tmp_path, monkeypatch):
+    import benchharness.evalscope_driver as driver
+    from benchharness.config import BenchConfig
+    from benchharness.registry import get_suite
+    from benchharness.suites.base import Task
+
+    monkeypatch.setattr(driver, "list_bundled_tasks", lambda b: ["t1", "t2"])
+    tasks = get_suite("toolathlon").tasks()
+    assert [t.task_id for t in tasks] == ["t1", "t2"]
+
+    def fake_run_one(benchmark, task_id, **kwargs):
+        assert benchmark == "toolathlon"
+        assert kwargs["extra_params"] == {"task_list": ["t1"]}
+        return EvalScopeOutcome(task_id, 1.0, True, "score=1.000 trials=1")
+
+    monkeypatch.setattr(driver, "run_one", fake_run_one)
+    adapter = get_suite("toolathlon")
+    assert adapter.status == "wired"
+    _, score = adapter.run_external(
+        Task(task_id="t1", prompt="p"),
+        {"model": "m", "config": BenchConfig(model="m"),
+         "run_id": "r", "workdir": tmp_path})
+    assert score.passed
+
+
 def test_evalscope_requirement_kind(tmp_path, monkeypatch):
     from benchharness.suites.base import Requirement, _requirement_missing
 

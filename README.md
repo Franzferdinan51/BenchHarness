@@ -27,7 +27,7 @@ tools share one setup.
 | `hle-tools` | reasoning | wired — HLE + sandboxed `run_python` tool loop |
 | `gpqa-diamond` | reasoning | wired — `Idavidrein/gpqa`, exact-letter grading |
 | `mcp-atlas` | agentic | wired — `ScaleAI/MCP-Atlas`, GTFA claim recall (tool-call fidelity next) |
-| `toolathlon` | agentic | scaffold — app-env driver in iteration 4 (`hkust-nlp/Toolathlon`) |
+| `toolathlon` | agentic | wired — official remote service, private mode (108 Verified tasks, acc; one job at a time on the public service) |
 | `widesearch` | agentic | wired — `ByteDance-Seed/WideSearch`, column recall (cell judge next) |
 | `browsecomp` | agentic | wired — decrypted `smolagents/browse_comp`, containment (LLM grader next) |
 | `claweval` | agentic | wired — EvalScope pinned official runner (300 tasks, Pass³ via `BENCH_CLAW_TRIALS=3`; live trial deferred to GPU-free) |
@@ -88,6 +88,11 @@ trials deferred until the GPU is free):
 - The Claw-Eval sandbox image (`claw-eval-agent:latest`) builds once
   from the pinned official Dockerfile; fixtures (~3GB) download once
   from ModelScope. Both are cached after the first run.
+- `toolathlon` submits to the official remote service (private mode):
+  envs and scoring run remotely while model calls relay back to local
+  LM Studio over a WebSocket proxy. The public service runs one job at
+  a time — a 503 "Server is busy" means retry later (the harness
+  reports the service message verbatim).
 
 Notes from live testing against local reasoning models (Ornith/Qwen3-style):
 
