@@ -1,0 +1,17 @@
+# BenchHarness config (optional — env vars win over this file).
+# Searched in order: ./bench.toml, ~/.grok-local/bench.toml,
+# ~/.config/benchharness/bench.toml
+
+[lm]
+# base_url = "http://127.0.0.1:1234/v1"  # or GROK_MODELS_BASE_URL / LM_STUDIO_URL
+# model = "qwen3.8-27b-splash"           # or LM_STUDIO_MODEL / GROK_MODEL
+# api_key = "lm-studio"                  # or LM_STUDIO_API_KEY
+temperature = 0.0
+max_retries = 3
+request_timeout_secs = 300.0
+# connect_timeout_secs = 2.0             # or GROK_CONNECT_TIMEOUT_SECS
+
+[run]
+jobs = 4
+per_task_timeout_secs = 600.0
+out_dir = "bench-results"
