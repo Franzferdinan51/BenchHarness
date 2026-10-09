@@ -26,6 +26,44 @@ def test_build_run_command_terminus_routing(tmp_path):
     assert "-l" in cmd
 
 
+def test_build_run_command_memory_policy(tmp_path):
+    cmd = build_run_command("d@1", "oracle", "m", tmp_path, "j",
+                            memory_policy="ignore")
+    assert "--memory" in cmd and "ignore" in cmd
+    cmd2 = build_run_command("d@1", "oracle", "m", tmp_path, "j")
+    assert "--memory" not in cmd2
+
+
+def test_tb_agent_override_oracle(tmp_path, monkeypatch):
+    from benchharness.config import BenchConfig
+    from benchharness.registry import get_suite
+    from benchharness.suites.base import Task
+
+    monkeypatch.setenv("BENCH_HARBOR_AGENT", "oracle")
+    seen: dict = {}
+
+    def fake_run_job(cmd, timeout, env=None):
+        seen["cmd"] = cmd
+        return 0, "tail"
+
+    def fake_parse(job_dir):
+        from benchharness.harbor_driver import TrialOutcome
+        return [TrialOutcome(task_name="t", passed=True, score=1.0,
+                             rewards={"reward": 1})]
+
+    import benchharness.harbor_driver as driver
+    monkeypatch.setattr(driver, "run_job", fake_run_job)
+    monkeypatch.setattr(driver, "parse_job_dir", fake_parse)
+    _, score = get_suite("tb-terminus").run_external(
+        Task(task_id="t", prompt="", reference="", metadata={"harbor_task": "t"}),
+        {"model": "m", "config": BenchConfig(model="m"), "run_id": "r",
+         "workdir": tmp_path})
+    assert score.passed
+    joined = " ".join(seen["cmd"])
+    assert "-a oracle" in joined and "api_base" not in joined
+    assert "--memory ignore" in joined  # default policy from config
+
+
 def _trial(tmp_path, name, **fields):
     d = tmp_path / name
     d.mkdir()

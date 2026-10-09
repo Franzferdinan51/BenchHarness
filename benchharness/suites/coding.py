@@ -13,6 +13,7 @@ touches the gold files scores partial credit, exact-match scores full.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from benchharness.schema import Score
 from benchharness.suites.base import Requirement, SuiteAdapter, Task, strip_thinking
@@ -348,6 +349,7 @@ class _TerminalBenchBase(SuiteAdapter):
 
     def run_external(self, task, ctx):
         import os as _os
+        import sys as _sys
 
         from benchharness.harbor_driver import (
             build_run_command,
@@ -358,29 +360,39 @@ class _TerminalBenchBase(SuiteAdapter):
         config = ctx.get("config")
         base_url = getattr(config, "base_url", "http://127.0.0.1:1234/v1")
         timeout = float(getattr(config, "harbor_timeout_secs", 1800.0))
+        memory = getattr(config, "harbor_memory_policy", "ignore")
         model = str(ctx.get("model", ""))
         workdir: Path = ctx["workdir"]
         jobs_dir = workdir / "harbor-jobs"
         jobs_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            jobs_dir.resolve().relative_to(Path.home().resolve())
+        except ValueError:
+            print("warning: harbor jobs outside $HOME are invisible to Colima "
+                  "bind mounts; rewards will not download. Keep --out under $HOME.",
+                  file=_sys.stderr)
         job_name = f"{self.name}-{task.task_id}".replace("/", "_")[:80]
 
+        # BENCH_HARBOR_AGENT=oracle runs golden solutions (LM-free smoke test).
+        agent = _os.environ.get("BENCH_HARBOR_AGENT", self.harbor_agent)
         agent_kwargs: dict[str, str] = {}
         agent_env: dict[str, str] = {}
         harbor_model = model
-        if self.harbor_agent == "terminus-2":
+        if agent == "terminus-2":
             agent_kwargs["api_base"] = base_url
             if not model.startswith("openai/"):
                 harbor_model = f"openai/{model}"
             agent_env["OPENAI_API_KEY"] = getattr(config, "api_key", "lm-studio")
-        elif self.harbor_agent == "claude-code":
+        elif agent == "claude-code":
             if _os.environ.get("ANTHROPIC_API_KEY"):
                 agent_env["ANTHROPIC_API_KEY"] = _os.environ["ANTHROPIC_API_KEY"]
 
         cmd = build_run_command(
-            self._dataset(), self.harbor_agent, harbor_model, jobs_dir, job_name,
+            self._dataset(), agent, harbor_model, jobs_dir, job_name,
             include_task=task.metadata.get("harbor_task", task.task_id),
             n_tasks=1,
             agent_kwargs=agent_kwargs, agent_env=agent_env,
+            memory_policy=memory,
         )
         returncode, tail = run_job(cmd, timeout)
         outcomes = parse_job_dir(jobs_dir / job_name)

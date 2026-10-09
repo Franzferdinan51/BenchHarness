@@ -84,11 +84,14 @@ def build_run_command(
     agent_kwargs: dict[str, str] | None = None,
     agent_env: dict[str, str] | None = None,
     timeout_multiplier: float = 1.0,
+    memory_policy: str | None = None,
 ) -> list[str]:
     cmd = ["harbor", "run", "-d", dataset, "-a", agent, "-m", model,
            "-o", str(jobs_subdir), "--job-name", job_name,
            "-n", str(n_concurrent), "-q",
            "--timeout-multiplier", str(timeout_multiplier)]
+    if memory_policy:
+        cmd += ["--memory", memory_policy]
     if task:
         cmd += ["-t", task]
     if include_task:

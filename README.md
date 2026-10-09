@@ -12,7 +12,7 @@ tools share one setup.
 
 | Suite | Category | Status |
 |---|---|---|
-| `tb-terminus` | coding | wired — Harbor `--agent terminus-2`, LM Studio-routed via `api_base` |
+| `tb-terminus` | coding | wired — Harbor `--agent terminus-2`, LM Studio-routed (oracle-validated live) |
 | `tb-claude` | coding | wired — Harbor `--agent claude-code` (needs `ANTHROPIC_API_KEY`) |
 | `tb-hermes` | coding | wired — Harbor `--agent hermes` (Hermes-native model config) |
 | `hermes-bench` | agentic | scaffold — Nous HermesIndex suite is closed; `tb-hermes` is the proxy |
@@ -43,6 +43,22 @@ need access plus `HF_TOKEN` in the environment (or `huggingface-cli login`);
 without it those suites use smoke samples or defer. SWE-bench Verified /
 Multilingual / Pro (`ScaleAI/SWE-bench_Pro`), SWE-Atlas-QnA, WideSearch,
 MCP-Atlas, NL2Repo, and BrowseComp are open and load directly.
+
+Terminal-Bench notes (validated live on Apple Silicon + Colima):
+
+- `uv tool install harbor` plus a running Docker daemon are required.
+- Give Colima room (`colima start --memory 24` on a 128GB host); the
+  harness passes `--memory ignore` by default because TB's 2G task limits
+  OOM-kill amd64 images under qemu emulation (override with
+  `BENCH_HARBOR_MEMORY`).
+- Keep `--out` under `$HOME`: Colima bind mounts don't propagate `/tmp`,
+  so rewards never download from jobs run there (the harness warns).
+- Public Harbor registry serves `terminal-bench@2.0` (89 tasks); 2.1
+  isn't published there yet — set `TB_DATASET=terminal-bench@2.1` when it is.
+- `BENCH_HARBOR_AGENT=oracle` runs golden solutions with zero LM calls —
+  the recommended smoke test for the TB path.
+- `tb-claude` needs `ANTHROPIC_API_KEY` (Claude Code CLI); `tb-hermes`
+  uses your Hermes CLI provider config for model routing.
 
 Notes from live testing against local reasoning models (Ornith/Qwen3-style):
 

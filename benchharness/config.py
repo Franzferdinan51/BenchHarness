@@ -60,6 +60,7 @@ class BenchConfig:
     max_tokens_override: int | None = None
     per_task_timeout_secs: float = 600.0
     harbor_timeout_secs: float = 1800.0
+    harbor_memory_policy: str = "ignore"
     out_dir: Path = field(default_factory=lambda: Path("bench-results"))
     source_file: str | None = None
 
@@ -108,6 +109,13 @@ class BenchConfig:
         cfg.jobs = int(run.get("jobs", 4))
         cfg.harbor_timeout_secs = float(
             os.environ.get("BENCH_HARBOR_TIMEOUT", run.get("harbor_timeout_secs", 1800.0))
+        )
+        # Task memory limits assume native amd64; under qemu emulation on
+        # Apple Silicon the 2G default OOM-kills trials (exit 137).
+        cfg.harbor_memory_policy = (
+            _nonblank(os.environ.get("BENCH_HARBOR_MEMORY"))
+            or _nonblank(run.get("harbor_memory_policy"))
+            or "ignore"
         )
         mt = _nonblank(os.environ.get("BENCH_MAX_TOKENS")) or run.get("max_tokens")
         cfg.max_tokens_override = int(mt) if mt is not None else None
