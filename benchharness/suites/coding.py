@@ -448,7 +448,7 @@ class DeepSweAdapter(SuiteAdapter):
             api_base=getattr(config, "base_url", "http://127.0.0.1:1234/v1"),
             api_key=getattr(config, "api_key", "lm-studio"),
             trials=trials,
-            workdir=ctx["workdir"],
+            work_dir=ctx["workdir"],
             timeout_secs=timeout,
         )
         output = f"deep_swe trials={trials} trace={oc.trace_path}"

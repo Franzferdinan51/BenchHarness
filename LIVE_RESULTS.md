@@ -86,3 +86,23 @@ verdict, tokens, notes.
   `transcript-<task>.json` (turns/commands/tokens) to the workdir and
   includes recent commands in the result excerpt; Score carries
   prompt/completion tokens through to TaskResult (was 0/0).
+
+## 2026-10-09 — mcp-atlas — PASS (claim recall 10/16, score 0.625)
+
+- Model: `duckbot-ornith-1.5-35b-a3b-mlx@8bit`, sequential, 12.2s.
+- Recall mode (agent-environment server unreachable, as expected without
+  the MCP env stack). First live PASS on a real agentic task.
+
+## 2026-10-09 — claweval / T001zh_email_triage — PASS (score 1.0)
+
+- Model: `duckbot-ornith-1.5-35b-a3b-mlx@8bit`, sequential, 42.9s.
+- Two harness bugs found and fixed by this trial (Iteration 28):
+  1. All three EvalScope callers passed `workdir=` to `run_one()`, whose
+     kwarg is `work_dir` — every live claw/deepswe/toolathlon trial
+     raised TypeError while mocks stayed green. Fixed + regression test
+     (`test_run_one_kwarg_contract`, signature-bound strict stub).
+  2. The official Dockerfile.agent defaults to the DaoCloud registry
+     mirror, which 500s outside China. Harness now pre-builds
+     `claw-eval-agent:latest` with `REGISTRY=docker.io` (the
+     Dockerfile's own documented override) in `prepare()`; EvalScope
+     reuses the image and skips its build.

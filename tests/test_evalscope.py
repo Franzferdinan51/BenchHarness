@@ -572,3 +572,102 @@ def test_evalscope_requirement_kind(tmp_path, monkeypatch):
     py.write_text("")
     monkeypatch.setenv("BENCH_EVALSCOPE_PYTHON", str(py))
     assert not _requirement_missing(Requirement("evalscope", "claw_eval", ""))
+
+
+def test_run_one_kwarg_contract(tmp_path, monkeypatch):
+    """Adapters must call run_one with its real kwargs (work_dir, not workdir).
+
+    Regression: all three EvalScope callers passed workdir=, which raised
+    TypeError on every live trial while mocks stayed green.
+    """
+    import inspect
+
+    import benchharness.evalscope_driver as driver
+    from benchharness.config import BenchConfig
+    from benchharness.suites.base import Task
+
+    sig = inspect.signature(driver.run_one)
+    assert "work_dir" in sig.parameters
+
+    seen = {}
+
+    def strict_run_one(benchmark, task_id, **kwargs):
+        sig.bind(benchmark, task_id, **kwargs)  # TypeError on bad kwargs
+        seen[benchmark] = kwargs
+        return driver.EvalScopeOutcome(
+            task_id=task_id, score=1.0, passed=True, details="stub"
+        )
+
+    import benchharness.suites.agentic as agentic_mod
+    import benchharness.suites.coding as coding_mod
+
+    # Adapters import run_one inside run_external, so patch the driver attr.
+    monkeypatch.setattr(driver, "run_one", strict_run_one)
+    ctx = {
+        "model": "m",
+        "config": BenchConfig(model="m"),
+        "run_id": "r",
+        "workdir": tmp_path,
+    }
+    coding_mod.DeepSweAdapter().run_external(
+        Task(task_id="t", prompt="p", metadata={"tasks_dir": str(tmp_path)}), ctx
+    )
+    agentic_mod.ToolathlonAdapter().run_external(Task(task_id="t", prompt="p"), ctx)
+    agentic_mod.ClawEvalAdapter().run_external(
+        Task(task_id="t", prompt="p", metadata={"split": "general"}), ctx
+    )
+    assert set(seen) == {"deep_swe", "toolathlon", "claw_eval"}
+    assert all("work_dir" in kw for kw in seen.values())
+
+
+def test_ensure_claw_agent_image_present(monkeypatch):
+    import benchharness.evalscope_driver as driver
+    import benchharness.sandbox as sandbox_mod
+    from benchharness.sandbox import ExecResult
+
+    # run_local is imported inside the function from sandbox.
+    monkeypatch.setattr(
+        sandbox_mod, "run_local", lambda *a, **k: ExecResult(0, "img", "")
+    )
+    assert driver.ensure_claw_agent_image() == "present"
+
+
+def test_ensure_claw_agent_image_builds_with_docker_io(tmp_path, monkeypatch):
+    import benchharness.evalscope_driver as driver
+    import benchharness.sandbox as sandbox_mod
+    from benchharness.sandbox import ExecResult
+
+    repo = tmp_path / "extracted" / "repo123"
+    repo.mkdir(parents=True)
+    (repo / "Dockerfile.agent").write_text("FROM x")
+    monkeypatch.setattr(
+        driver, "claw_official_extract_root", lambda: tmp_path / "extracted"
+    )
+    seen = []
+
+    def fake_run(argv, **kwargs):
+        seen.append(argv)
+        if argv[:3] == ["docker", "image", "inspect"]:
+            return ExecResult(1, "", "nope")
+        return ExecResult(0, "built", "")
+
+    monkeypatch.setattr(sandbox_mod, "run_local", fake_run)
+    assert driver.ensure_claw_agent_image() == "built"
+    build = next(a for a in seen if len(a) > 1 and a[1] == "build")
+    assert "REGISTRY=docker.io" in build
+    assert "claw-eval-agent:latest" in build
+
+
+def test_ensure_claw_agent_image_missing_extract_warns(tmp_path, monkeypatch, capsys):
+    import benchharness.evalscope_driver as driver
+    import benchharness.sandbox as sandbox_mod
+    from benchharness.sandbox import ExecResult
+
+    monkeypatch.setattr(
+        driver, "claw_official_extract_root", lambda: tmp_path / "empty"
+    )
+    monkeypatch.setattr(
+        sandbox_mod, "run_local", lambda *a, **k: ExecResult(1, "", "nope")
+    )
+    assert driver.ensure_claw_agent_image() == "missing-extract"
+    assert "DaoCloud" in capsys.readouterr().err

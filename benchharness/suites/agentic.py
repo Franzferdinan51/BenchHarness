@@ -448,7 +448,7 @@ class ToolathlonAdapter(SuiteAdapter):
             api_base=getattr(config, "base_url", "http://127.0.0.1:1234/v1"),
             api_key=getattr(config, "api_key", "lm-studio"),
             trials=1,
-            workdir=ctx["workdir"],
+            work_dir=ctx["workdir"],
             timeout_secs=timeout,
             extra_params={"task_list": [task.task_id]},
         )
@@ -533,7 +533,9 @@ class ClawEvalAdapter(SuiteAdapter):
     Runs the pinned official runner + Docker sandbox + graders through
     EvalScope (evalscope_driver), with agent and LLM judge routed to
     LM Studio. BENCH_CLAW_SUBSET selects splits (default general);
-    BENCH_CLAW_TRIALS sets repeats (3 = official Pass³)."""
+    BENCH_CLAW_TRIALS sets repeats (3 = official Pass³). prepare()
+    pre-builds claw-eval-agent:latest with REGISTRY=docker.io because
+    the official DaoCloud mirror default 500s outside China."""
 
     name = "claweval"
     category = "agentic"
@@ -551,6 +553,11 @@ class ClawEvalAdapter(SuiteAdapter):
             ),
             Requirement("cli", "docker", "fixture sandboxes"),
         ]
+
+    def prepare(self, workdir):
+        from benchharness.evalscope_driver import ensure_claw_agent_image
+
+        ensure_claw_agent_image()
 
     def tasks(self, limit=None):
         rows = _load_claweval_rows()
@@ -604,7 +611,7 @@ class ClawEvalAdapter(SuiteAdapter):
             api_key=getattr(config, "api_key", "lm-studio"),
             split=task.metadata.get("split", "general"),
             trials=trials,
-            workdir=ctx["workdir"],
+            work_dir=ctx["workdir"],
             timeout_secs=timeout,
         )
         output = f"claw_eval trials={trials} trace={oc.trace_path}"

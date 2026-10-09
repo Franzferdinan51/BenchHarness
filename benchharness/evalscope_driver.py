@@ -22,6 +22,74 @@ def evalscope_python() -> Path:
     return Path.home() / ".cache" / "benchharness" / "evalscope-venv" / "bin" / "python"
 
 
+CLAW_AGENT_IMAGE = "claw-eval-agent:latest"
+
+
+def claw_official_extract_root() -> Path:
+    """EvalScope's cache dir holding the extracted claw-eval official repo."""
+    return (
+        Path.home()
+        / ".cache"
+        / "evalscope"
+        / "claw_eval"
+        / "official_repo"
+        / "extracted"
+    )
+
+
+def ensure_claw_agent_image(timeout_secs: float = 1800.0) -> str:
+    """Ensure the Claw-Eval sandbox image exists, building it if needed.
+
+    Returns "present" when the image already exists, "built" after a
+    fresh build. The official Dockerfile.agent defaults to the DaoCloud
+    registry mirror, which 500s outside China (live 2026-10-09), so the
+    harness builds with REGISTRY=docker.io (the Dockerfile's own
+    documented override). EvalScope skips its build when the image
+    exists, so this is a pure pre-seed.
+
+    Warns (does not raise) when EvalScope hasn't extracted the official
+    repo yet: the first trial seeds the extract, the next run heals.
+    """
+    import sys as _sys
+
+    from benchharness.sandbox import run_local
+
+    if (
+        run_local(
+            ["docker", "image", "inspect", CLAW_AGENT_IMAGE], timeout_secs=60.0
+        ).exit_code
+        == 0
+    ):
+        return "present"
+    matches = sorted(claw_official_extract_root().glob("*/Dockerfile.agent"))
+    if not matches:
+        print(
+            "warning: claw-eval-agent:latest missing and the EvalScope "
+            "official-repo extract hasn't seeded yet; the first trial will "
+            "likely fail on the DaoCloud mirror, then re-run to heal.",
+            file=_sys.stderr,
+        )
+        return "missing-extract"
+    repo_root = matches[0].parent
+    proc = run_local(
+        [
+            "docker",
+            "build",
+            "--build-arg",
+            "REGISTRY=docker.io",
+            "-t",
+            CLAW_AGENT_IMAGE,
+            "-f",
+            "Dockerfile.agent",
+            str(repo_root),
+        ],
+        timeout_secs=timeout_secs,
+    )
+    if proc.exit_code != 0:
+        raise RuntimeError(f"claw agent image build failed: {proc.stderr[-500:]}")
+    return "built"
+
+
 def have_evalscope(benchmark: str = "claw_eval") -> bool:
     """True when the venv python exists and imports evalscope (+extras)."""
     py = evalscope_python()
