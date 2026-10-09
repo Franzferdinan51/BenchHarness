@@ -245,10 +245,11 @@ class Nl2RepoAdapter(SuiteAdapter):
 
     name = "nl2repo"
     category = "coding"
-    description = "NL2Repo (AweAI-Team/AweAgent-Meta-NL2Repo, docker golden tests)"
+    description = "NL2Repo (AweAI-Team/AweAgent-Meta-NL2Repo, shell agent + verify)"
     source = "AweAI-Team/AweAgent-Meta-NL2Repo"
-    status = "scaffold"
+    status = "wired"
     max_tokens = 16384
+    agent_turns = 20
 
     def requirements(self):
         return [
@@ -266,16 +267,42 @@ class Nl2RepoAdapter(SuiteAdapter):
             task_id=str(r.get("instance_id", i)),
             prompt=str(r.get("start_instruction", "")),
             reference="",
-            metadata={"skip_reason": "docker build+verify loop lands in "
-                                     "iteration 4",
-                      "package": r.get("package_name", ""),
+            metadata={"package": r.get("package_name", ""),
                       "verify_cmd": str(r.get("verify_cmd", "")),
                       "image": r.get("evaluation_image", "")},
         ) for i, r in enumerate(rows)]
         return out[:limit] if limit else out
 
     def score(self, output, task):
-        return Score(passed=False, details="scaffold: docker verify loop pending")
+        # Unused: run_external() drives the shell-agent loop + verifier.
+        return Score(passed=False, details="nl2repo agent trial (see run_external)")
+
+    def run_external(self, task, ctx):
+        from benchharness.agent_loop import docker_shell_loop
+
+        image = task.metadata.get("image", "")
+        verify_cmd = task.metadata.get("verify_cmd", "")
+        if not image:
+            raise RuntimeError("NL2Repo task has no evaluation_image")
+        client = ctx.get("client")
+        model = str(ctx.get("model", ""))
+        transcript, shell = docker_shell_loop(
+            client, model, image, task.prompt,
+            max_turns=self.agent_turns, max_tokens=self.max_tokens,
+        )
+        try:
+            verify = shell.exec(verify_cmd, timeout_secs=600.0) if verify_cmd else None
+        finally:
+            shell.stop()
+        if verify is None:
+            return "", Score(passed=False, details="no verify_cmd; agent ran "
+                             f"{transcript.turns} turns")
+        ok = verify.exit_code == 0
+        tail = (verify.stdout + "\n" + verify.stderr)[-600:]
+        return tail, Score(
+            passed=ok, score=1.0 if ok else 0.0,
+            details=f"verify exit={verify.exit_code} after {transcript.turns} "
+                    f"turns{f' (capped)' if transcript.capped else ''}")
 
 
 def _keywords(text: str) -> set[str]:

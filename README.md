@@ -21,7 +21,7 @@ tools share one setup.
 | `swe-multilingual` | coding | wired — official docker eval when available, else heuristic |
 | `deepswe` | coding | scaffold — `datacurve/deep-swe` is gated; Harbor verifiers in iteration 4 |
 | `frontier-bench` | coding | scaffold — Anthropic-reported, no public artifact (TB4 line tracked) |
-| `nl2repo` | coding | scaffold — real task list; docker build+verify loop in iteration 4 |
+| `nl2repo` | coding | wired — shell-agent loop in per-task image + `verify_cmd` grading |
 | `swe-atlas-qna` | coding | wired — `ScaleAI/SWE-Atlas-QnA`, rubric-keyword recall (LLM judge next) |
 | `hle` | reasoning | wired — `cais/hle`, normalized-answer grading |
 | `hle-tools` | reasoning | wired — HLE + sandboxed `run_python` tool loop |

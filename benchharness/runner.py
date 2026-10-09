@@ -78,7 +78,7 @@ def evaluate_task(
     if callable(hook):
         try:
             ctx = {"model": model, "config": config, "run_id": run_id,
-                   "workdir": workdir or Path.cwd()}
+                   "workdir": workdir or Path.cwd(), "client": client}
             ext = hook(task, ctx)
             if ext is not None:
                 excerpt, score = ext
