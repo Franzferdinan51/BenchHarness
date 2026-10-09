@@ -35,6 +35,129 @@ def test_parse_pass_cubed_requires_all_trials():
     assert oc.passed
 
 
+def test_row_outcome_mcp_pass_shape():
+    from benchharness.evalscope_driver import row_outcome
+
+    assert row_outcome({"coverage_score": 0.8, "pass": 1.0}) == (0.8, True)
+    assert row_outcome({"coverage_score": 0.2, "pass": 0.0}) == (0.2, False)
+    # parse_samples uses the same helper
+    oc = parse_samples("t", [{"value": {"coverage_score": 1.0, "pass": 1.0},
+                              "metadata": {}}])
+    assert oc.passed and oc.score == 1.0
+
+
+def test_run_batch_parses_rows_and_limit(tmp_path, monkeypatch):
+    import subprocess
+
+    import benchharness.evalscope_driver as driver
+
+    rows = [{"value": {"coverage_score": 0.5, "pass": 0.0},
+             "status": "success", "metadata": {}, "prompt": "do x"}]
+
+    class FakeProc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    FakeProc.stdout = "BENCH_SAMPLES_JSON:" + json.dumps(rows) + "\n"
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        return FakeProc()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    got, error = driver.run_batch("mcp_atlas", model="m", api_base="u",
+                                  api_key="k", limit=7, work_dir=tmp_path)
+    assert error == "" and got == rows
+    assert seen["cmd"][-1] == "7" and seen["cmd"][-2] == "{}"
+
+
+def test_run_batch_error_paths(tmp_path, monkeypatch):
+    import subprocess
+
+    import benchharness.evalscope_driver as driver
+
+    class FakeProc:
+        returncode = 2
+        stdout = "nope"
+        stderr = "bad"
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: FakeProc())
+    rows, error = driver.run_batch("mcp_atlas", model="m", api_base="u",
+                                   api_key="k", limit=1, work_dir=tmp_path)
+    assert rows == [] and "rc=2" in error
+
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired(cmd=[], timeout=1)
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    rows, error = driver.run_batch("mcp_atlas", model="m", api_base="u",
+                                   api_key="k", limit=1, work_dir=tmp_path)
+    assert rows == [] and "timeout" in error
+
+
+def test_mcp_recall_fallback_without_service(tmp_path, monkeypatch):
+    import benchharness.suites.agentic as agentic_mod
+    from benchharness.config import BenchConfig
+    from benchharness.suites.base import Task
+
+    monkeypatch.setattr(agentic_mod, "_mcp_env_reachable", lambda *a, **k: False)
+    adapter = agentic_mod.McpAtlasAdapter()
+    task = Task(task_id="t", prompt="p", reference="claims",
+                metadata={"raw_prompt": "p", "ds_index": 0})
+    assert adapter.run_external(
+        task, {"model": "m", "config": BenchConfig(model="m"),
+               "run_id": "r", "workdir": tmp_path}) is None
+    out = adapter.score("claims words here", task)
+    assert "recall mode" in out.details
+
+
+def test_mcp_agent_mode_cache_match_and_exclude(tmp_path, monkeypatch):
+    import benchharness.evalscope_driver as driver
+    import benchharness.suites.agentic as agentic_mod
+    from benchharness.config import BenchConfig
+    from benchharness.suites.base import Task
+
+    monkeypatch.setattr(agentic_mod.McpAtlasAdapter, "_agent_mode",
+                        lambda self: True)
+    calls = []
+
+    def fake_batch(benchmark, **kwargs):
+        calls.append(kwargs["limit"])
+        assert kwargs["extra_params"]["mcp_server_url"].endswith(":1984")
+        return ([{"value": {"coverage_score": 1.0, "pass": 1.0},
+                  "status": "success", "metadata": {}, "prompt": "p0"}]
+                if kwargs["limit"] == 1 else
+                [{"value": {"coverage_score": 1.0, "pass": 1.0},
+                  "status": "success", "metadata": {}, "prompt": "p0"},
+                 {"value": {"coverage_score": 0.0, "pass": 0.0},
+                  "status": "success", "metadata": {}, "prompt": "p1"}]), ""
+
+    monkeypatch.setattr(driver, "run_batch", fake_batch)
+    adapter = agentic_mod.McpAtlasAdapter()
+    ctx = {"model": "m", "config": BenchConfig(model="m"), "run_id": "r",
+           "workdir": tmp_path}
+
+    def task(i):
+        return Task(task_id=f"t{i}", prompt=f"p{i} + tools",
+                    metadata={"raw_prompt": f"p{i}", "ds_index": i})
+
+    _, s0 = adapter.run_external(task(0), ctx)
+    assert s0.passed and s0.score == 1.0 and "agent mode" in s0.details
+    # second call reuses cache (no new batch while covered)
+    _, s0b = adapter.run_external(task(0), ctx)
+    assert s0b.passed and calls == [1]
+    # excluded task (prompt missing from rows)
+    _, sx = adapter.run_external(
+        Task(task_id="tx", prompt="px", metadata={"raw_prompt": "px",
+                                                  "ds_index": 0}), ctx)
+    assert not sx.passed and "excluded" in sx.details
+    # growth: index beyond coverage reruns with bigger limit
+    _, s1 = adapter.run_external(task(1), ctx)
+    assert not s1.passed and calls == [1, 2]
+
+
 def test_parse_deep_swe_acc():
     rows = [{"value": {"acc": 1.0}, "status": "ok",
              "metadata": {"reward": 1.0, "pier_job_result_path": "/tmp/p.json"}}]

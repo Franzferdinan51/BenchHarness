@@ -82,6 +82,7 @@ import glob, json, os, sys
 
 benchmark, task_id, split, model, api_base, api_key, trials, work_dir = sys.argv[1:9]
 extra_json = sys.argv[9] if len(sys.argv) > 9 else "{}"
+limit = int(sys.argv[10]) if len(sys.argv) > 10 else 0
 trials = int(trials)
 try:
     extra_params = dict(json.loads(extra_json))
@@ -109,6 +110,7 @@ cfg = TaskConfig(
         {"model_id": model, "api_url": api_base, "api_key": api_key}]},
     repeats=trials,
     work_dir=work_dir,
+    **({"limit": limit} if limit > 0 else {}),
 )
 run_task(task_cfg=cfg)
 
@@ -132,9 +134,15 @@ for pattern in patterns:
                 except ValueError:
                     continue
                 sc = (row.get("sample_score") or {}).get("score") or {}
+                prompt = ""
+                for msg in row.get("messages") or []:
+                    if msg.get("role") == "user":
+                        prompt = msg.get("content") or ""
+                        break
                 rows.append({"value": sc.get("value") or {},
                              "status": sc.get("status") or "",
-                             "metadata": sc.get("metadata") or {}})
+                             "metadata": sc.get("metadata") or {},
+                             "prompt": prompt})
 print("BENCH_SAMPLES_JSON:" + json.dumps(rows, default=str))
 """
 
@@ -186,6 +194,48 @@ def run_one(
     return parse_samples(task_id, samples)
 
 
+def run_batch(
+    benchmark: str,
+    *,
+    model: str,
+    api_base: str,
+    api_key: str,
+    limit: int,
+    work_dir: Path | None = None,
+    timeout_secs: float = 7200.0,
+    extra_params: dict | None = None,
+) -> tuple[list[dict], str]:
+    """Run one EvalScope job over the first `limit` dataset rows.
+
+    Returns (rows, error): rows are raw review dicts (value/status/
+    metadata/prompt); error is "" on success, else a short reason.
+    Used by benchmarks without per-task selection (mcp_atlas).
+    """
+    import uuid as _uuid
+
+    dest = (work_dir or Path.cwd()) / f"evalscope-{benchmark}-batch-{_uuid.uuid4().hex[:6]}"
+    dest.mkdir(parents=True, exist_ok=True)
+    cmd = [str(evalscope_python()), "-c", DRIVER_SCRIPT, benchmark, "*",
+           "default", model, api_base, api_key, "1", str(dest),
+           json.dumps(extra_params or {}), str(limit)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=timeout_secs)
+    except subprocess.TimeoutExpired:
+        return [], f"evalscope timeout after {timeout_secs:.0f}s"
+    except OSError as exc:
+        return [], f"launch failed: {exc}"
+    for line in (proc.stdout or "").splitlines():
+        if line.startswith("BENCH_SAMPLES_JSON:"):
+            try:
+                rows = json.loads(line[len("BENCH_SAMPLES_JSON:"):])
+                return (rows if isinstance(rows, list) else []), ""
+            except ValueError:
+                return [], "unparseable samples line"
+    tail = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()[-400:]
+    return [], f"no samples (rc={proc.returncode}): {tail}"
+
+
 def _num(value: object) -> float:
     try:
         return float(value or 0.0)
@@ -193,12 +243,28 @@ def _num(value: object) -> float:
         return 0.0
 
 
+def row_outcome(value: dict) -> tuple[float, bool]:
+    """(score, passed) for one review-row value dict.
+
+    Shapes (all confirmed by stub-endpoint probes):
+    - claw_eval: {task_score, passed, ...} / deep_swe+toolathlon: {acc}
+    - mcp_atlas: {coverage_score, pass}
+    """
+    if "passed" in value:
+        return _num(value.get("task_score", value["passed"])), \
+            _num(value["passed"]) >= 1.0
+    if "pass" in value:
+        return _num(value.get("coverage_score", value["pass"])), \
+            _num(value["pass"]) >= 1.0
+    if "acc" in value:
+        return _num(value["acc"]), _num(value["acc"]) >= 1.0
+    first = next(iter(value.values()), 0.0)
+    return _num(first), _num(first) >= 1.0
+
+
 def parse_samples(task_id: str, samples: list[dict]) -> EvalScopeOutcome:
     """Build one outcome from review rows (one row per repeat trial).
 
-    Metric shapes (confirmed by stub-endpoint probe):
-    - claw_eval value: {task_score, passed, error_rate, judge_score}
-    - deep_swe value: {acc} with metadata {reward, f2p, p2p, ...}
     Pass requires EVERY trial to pass (official Pass^3 when trials=3).
     """
     verdicts: list[bool] = []
@@ -208,16 +274,9 @@ def parse_samples(task_id: str, samples: list[dict]) -> EvalScopeOutcome:
     for sample in samples:
         value = sample.get("value") or {}
         meta = sample.get("metadata") or {}
-        if "passed" in value:
-            verdicts.append(_num(value["passed"]) >= 1.0)
-            scores.append(_num(value.get("task_score", value["passed"])))
-        elif "acc" in value:
-            verdicts.append(_num(value["acc"]) >= 1.0)
-            scores.append(_num(value["acc"]))
-        else:
-            first = next(iter(value.values()), 0.0)
-            scores.append(_num(first))
-            verdicts.append(_num(first) >= 1.0)
+        score, verdict = row_outcome(value)
+        scores.append(score)
+        verdicts.append(verdict)
         trace_path = trace_path or str(
             meta.get("trace_path") or meta.get("pier_job_result_path") or "")
         err = meta.get("error") or ""

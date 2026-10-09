@@ -26,7 +26,7 @@ tools share one setup.
 | `hle` | reasoning | wired — `cais/hle`, normalized-answer grading |
 | `hle-tools` | reasoning | wired — HLE + sandboxed `run_python` tool loop |
 | `gpqa-diamond` | reasoning | wired — `Idavidrein/gpqa`, exact-letter grading |
-| `mcp-atlas` | agentic | wired — `ScaleAI/MCP-Atlas`, GTFA claim recall (tool-call fidelity next) |
+| `mcp-atlas` | agentic | wired — fidelity ladder: real MCP tool loop + claim judge via agent-environment when up (else GTFA recall) |
 | `toolathlon` | agentic | wired — official remote service, private mode (108 Verified tasks, acc; one job at a time on the public service) |
 | `widesearch` | agentic | wired — `ByteDance-Seed/WideSearch`, column recall (cell judge next) |
 | `browsecomp` | agentic | wired — decrypted `smolagents/browse_comp`, containment (LLM grader next) |
@@ -93,6 +93,14 @@ trials deferred until the GPU is free):
   LM Studio over a WebSocket proxy. The public service runs one job at
   a time — a 503 "Server is busy" means retry later (the harness
   reports the service message verbatim).
+- `mcp-atlas` prefers agent mode when the official `agent-environment`
+  service is up: `docker run -d -p 1984:1984
+  ghcr.io/scaleapi/mcp-atlas:1.2.5` (13/20 servers live keyless; add
+  API keys via env file for the rest). Override the URL with
+  `BENCH_MCP_ENV_URL`. One EvalScope batch job runs the tool loop +
+  per-claim judge; rows map back by exact prompt; tasks needing
+  offline servers report `excluded` honestly. Without the service the
+  suite falls back to GTFA claim-keyword recall.
 
 Notes from live testing against local reasoning models (Ornith/Qwen3-style):
 

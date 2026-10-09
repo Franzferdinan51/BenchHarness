@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from pathlib import Path
 
 from benchharness.schema import Score
 from benchharness.suites.base import Requirement, SuiteAdapter, Task, strip_thinking
@@ -163,10 +164,39 @@ class BrowseCompAdapter(SuiteAdapter):
                      details="canonical simple-evals grader")
 
 
+def _mcp_env_url() -> str:
+    import os as _os
+
+    return _os.environ.get("BENCH_MCP_ENV_URL",
+                           "http://localhost:1984").rstrip("/")
+
+
+def _mcp_env_reachable(url: str, timeout_secs: float = 10.0) -> bool:
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(url + "/enabled-servers",
+                                    timeout=timeout_secs) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
 class McpAtlasAdapter(SuiteAdapter):
+    """MCP-Atlas with a fidelity ladder.
+
+    - Agent mode (preferred): when the official `agent-environment`
+      Docker service is reachable (BENCH_MCP_ENV_URL, default
+      localhost:1984) and the EvalScope venv exists, one EvalScope
+      batch job runs the real MCP tool loop + per-claim LLM judge;
+      rows map back to tasks by exact prompt (unique across 500).
+    - Recall mode (fallback): single-turn answer graded by GTFA
+      claim-keyword recall, no services needed.
+    """
+
     name = "mcp-atlas"
     category = "agentic"
-    description = "MCP-Atlas (ScaleAI/MCP-Atlas, GTFA claim recall)"
+    description = "MCP-Atlas (agent loop + claim judge, recall fallback)"
     source = "ScaleAI/MCP-Atlas (500 prompts, 36 MCP servers, 220 tools)"
     status = "wired"
     max_tokens = 4096
@@ -174,26 +204,39 @@ class McpAtlasAdapter(SuiteAdapter):
     SMOKE = [("smoke-1", "What year was the AssaultCube repo created?",
               "The AssaultCube GitHub repository was created in 2013.")]
 
+    def __init__(self):
+        import threading
+
+        self._batch_lock = threading.Lock()
+        self._env_ok: bool | None = None
+
     def requirements(self):
-        return [Requirement("pip", "datasets", "HF loader (else smoke)", soft=True)]
+        return [Requirement("pip", "datasets", "HF loader (else smoke)", soft=True),
+                Requirement("evalscope", "mcp_atlas",
+                            "isolated EvalScope venv (agent mode; else recall)",
+                            soft=True)]
 
     def tasks(self, limit=None):
         rows = _load_hf_dataset("ScaleAI/MCP-Atlas")
         out: list[Task] = []
         if rows is not None:
-            for r in rows:
+            for idx, r in enumerate(rows):
                 tools = r.get("ENABLED_TOOLS", [])
+                raw_prompt = str(r.get("PROMPT", ""))
                 out.append(Task(
                     task_id=str(r.get("TASK", len(out))),
-                    prompt=f"{r.get('PROMPT', '')}\n\n"
+                    prompt=f"{raw_prompt}\n\n"
                            f"(Available tools in the full sandbox: "
                            f"{', '.join(tools[:12])}{'...' if len(tools) > 12 else ''})",
                     reference=str(r.get("GTFA_CLAIMS", "")),
-                    metadata={"tools": list(tools) if isinstance(tools, list) else []},
+                    metadata={"tools": list(tools) if isinstance(tools, list) else [],
+                              "raw_prompt": raw_prompt, "ds_index": idx},
                 ))
         else:
             for tid, prompt, ref in self.SMOKE:
-                out.append(Task(task_id=tid, prompt=prompt, reference=ref))
+                out.append(Task(task_id=tid, prompt=prompt, reference=ref,
+                                metadata={"raw_prompt": prompt,
+                                          "ds_index": -1}))
         return out[:limit] if limit else out
 
     def score(self, output, task):
@@ -204,8 +247,68 @@ class McpAtlasAdapter(SuiteAdapter):
         hits = {k for k in keys if k in strip_thinking(output).lower()}
         recall = len(hits) / len(keys)
         return Score(passed=recall >= 0.6, score=recall,
-                     details=f"claim_recall={len(hits)}/{len(keys)}; "
-                             "MCP tool-call fidelity grading lands in iteration 4")
+                     details=f"claim_recall={len(hits)}/{len(keys)} "
+                             f"(recall mode{self._recall_why()})")
+
+    def _recall_why(self) -> str:
+        if self._env_ok is False:
+            return "; agent-environment unreachable"
+        return ""
+
+    def _agent_mode(self) -> bool:
+        if self._env_ok is None:
+            from benchharness.evalscope_driver import evalscope_python
+
+            self._env_ok = (evalscope_python().is_file()
+                            and _mcp_env_reachable(_mcp_env_url()))
+        return self._env_ok
+
+    def run_external(self, task, ctx):
+        if not self._agent_mode():
+            return None  # recall fallback via score()
+        import json as _json
+
+        from benchharness.evalscope_driver import row_outcome, run_batch
+
+        config = ctx.get("config")
+        workdir: Path = ctx["workdir"]
+        cache_path = workdir / "mcp_batch.json"
+        ds_index = int(task.metadata.get("ds_index", -1))
+        if ds_index < 0:
+            return None  # smoke rows have no dataset rows
+        with self._batch_lock:
+            cache = {"covered": 0, "rows": {}}
+            if cache_path.is_file():
+                try:
+                    cache = _json.loads(cache_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    cache = {"covered": 0, "rows": {}}
+            if ds_index >= int(cache.get("covered", 0)):
+                rows, error = run_batch(
+                    "mcp_atlas", model=str(ctx.get("model", "")),
+                    api_base=getattr(config, "base_url",
+                                     "http://127.0.0.1:1234/v1"),
+                    api_key=getattr(config, "api_key", "lm-studio"),
+                    limit=ds_index + 1, work_dir=workdir,
+                    timeout_secs=float(getattr(config, "evalscope_timeout_secs",
+                                               5400.0)),
+                    extra_params={"mcp_server_url": _mcp_env_url()},
+                )
+                if error:
+                    return "", Score(passed=False, score=0.0,
+                                     details=f"agent batch failed: {error}")
+                cache = {"covered": ds_index + 1,
+                         "rows": {str(r.get("prompt", "")): r.get("value", {})
+                                  for r in rows}}
+                cache_path.write_text(_json.dumps(cache), encoding="utf-8")
+        value = cache["rows"].get(str(task.metadata.get("raw_prompt", "")))
+        if value is None:
+            return "", Score(passed=False, score=0.0,
+                             details="excluded: required MCP servers offline "
+                                     "(see agent-environment /enabled-servers)")
+        score, passed = row_outcome(value)
+        return "", Score(passed=passed, score=score,
+                         details=f"coverage={score:.3f} (agent mode)")
 
 
 class ToolathlonAdapter(SuiteAdapter):
