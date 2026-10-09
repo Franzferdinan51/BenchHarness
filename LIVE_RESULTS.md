@@ -106,3 +106,23 @@ verdict, tokens, notes.
      `claw-eval-agent:latest` with `REGISTRY=docker.io` (the
      Dockerfile's own documented override) in `prepare()`; EvalScope
      reuses the image and skips its build.
+
+## 2026-10-09 — deepswe / abs-module-cache-flags — FAIL (score 0.0)
+
+- Model: `duckbot-ornith-1.5-35b-a3b-mlx@8bit`, sequential, 1934s (32 min).
+- Genuine scored FAIL via the EvalScope Pier agent + verifier (acc 0.0).
+  Longest live trial so far; no infra issues.
+
+## 2026-10-09 — toolathlon / ab-testing — PASS (score 1.0)
+
+- Model: `duckbot-ornith-1.5-35b-a3b-mlx@8bit`, 404s, via the official
+  remote service + local relay. Genuine scored PASS.
+
+## 2026-10-09 — hermes-bench / t01_echo — PASS (score 1.0)
+
+- Model: `duckbot-ornith-1.5-35b-a3b-mlx@8bit`, 32s, real Hermes Agent
+  routed to LM Studio (127.0.0.1:1234 verified in trace).
+- Iteration 29 wired the suite: new `hermes_driver.py` (checkout mgmt,
+  task enumeration, run_real subprocess, summary parsing) +
+  HermesBenchAdapter (19/20 suites wired; only frontier-bench still a
+  scaffold — no public artifact found on re-check).

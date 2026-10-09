@@ -11,7 +11,8 @@ Wired with documented heuristic graders (parametric answers, no live tools):
   local relay proxy (EvalScope wrapper).
 - claweval: claw-eval/Claw-Eval via ModelScope + EvalScope.
 
-Scaffold: hermes-bench (portal has no public task source).
+- hermes-bench: am423/hermes-bench-tool-call, real Hermes Agent per
+  task via hermes_driver (61 tasks; the Nous portal suite is closed).
 """
 
 from __future__ import annotations
@@ -461,38 +462,93 @@ class ToolathlonAdapter(SuiteAdapter):
 
 
 class HermesBenchAdapter(SuiteAdapter):
-    """Hermes Bench (Nous HermesIndex suite: 150 tasks, 25 categories).
+    """HermesBench (am423/hermes-bench-tool-call v0.3.0): 61 local tasks
+    across 13 groups (terminal, file read, patch, search, execute_code,
+    web, memory, ...), each with task.yaml + stdlib verifier.py.
 
-    As of iteration 18 the official suite still has no public runner or
-    task download — it runs inside Hermes Agent via the Nous portal
-    (https://portal.nousresearch.com/bench). Runnable proxies in this
-    harness: tb-hermes (same Hermes Agent harness on Terminal-Bench) and
-    third-party am423/hermes-bench-tool-call (local tool-call tasks).
+    Runs the real Hermes Agent (run_agent.py from the local checkout)
+    per task, routed to LM Studio via --base-url + dummy API key
+    (upstream's documented local routing). The official Nous portal
+    suite (portal.nousresearch.com/bench) is still closed; tb-hermes
+    remains the Terminal-Bench proxy for the Hermes harness itself.
     Surveyed and rejected: Bent-Solutions/hermes-bench (self-hosted UI
-    for user-authored custom suites; carries no official tasks).
+    for user-authored custom suites; carries no tasks).
     """
 
     name = "hermes-bench"
     category = "agentic"
-    description = "Hermes Bench (Nous HermesIndex; no public runner yet)"
-    source = "https://portal.nousresearch.com/bench (closed suite)"
-    status = "scaffold"
+    description = "HermesBench v0.3.0 (real Hermes Agent, 61 tasks)"
+    source = "am423/hermes-bench-tool-call via hermes_driver"
+    status = "wired"
+    task_timeout_secs = 1200.0  # per-task agent run + verifier
 
-    def tasks(self, limit=None):
+    def requirements(self):
         return [
-            Task(
-                task_id="no-public-runner",
-                prompt="",
-                reference="",
-                metadata={
-                    "skip_reason": "Hermes Bench has no public "
-                    "runner; use tb-hermes proxy or rerun research"
-                },
-            )
+            Requirement("pip", "yaml", "hermesbench task files"),
+            Requirement("pip", "click", "hermesbench CLI"),
         ]
 
+    def _repo(self):
+        from benchharness.hermes_driver import ensure_repo
+
+        return ensure_repo()
+
+    def prepare(self, workdir):
+        from benchharness.hermes_driver import require_agent_checkout
+
+        self._repo()
+        require_agent_checkout()
+
+    def tasks(self, limit=None):
+        from benchharness.hermes_driver import ensure_repo, list_tasks
+
+        try:
+            repo = ensure_repo()
+        except Exception:
+            return [
+                Task(
+                    task_id="missing-data",
+                    prompt="",
+                    reference="",
+                    metadata={
+                        "skip_reason": "hermes-bench checkout unavailable; "
+                        "network or $HERMESBENCH_PATH"
+                    },
+                )
+            ]
+        out = [
+            Task(task_id=n, prompt=f"HermesBench task: {n}", reference="")
+            for n in list_tasks(repo)
+        ]
+        return out[:limit] if limit else out
+
     def score(self, output, task):
-        return Score(passed=False, details="scaffold: no public runner")
+        return Score(passed=False, details="hermes trial (see run_external)")
+
+    def run_external(self, task, ctx):
+        from benchharness.hermes_driver import run_task
+
+        config = ctx.get("config")
+        base_url = getattr(config, "base_url", "http://127.0.0.1:1234/v1")
+        timeout = float(getattr(config, "hermes_timeout_secs", 900.0))
+        model = str(ctx.get("model", ""))
+        outcome, tail = run_task(
+            task.metadata.get("hermes_task", task.task_id),
+            model=model,
+            base_url=base_url,
+            timeout_secs=timeout,
+        )
+        if outcome is None:
+            return tail, Score(passed=False, score=0.0, details="no trial result")
+        if outcome.error:
+            return tail, Score(
+                passed=False, score=0.0, details=f"trial error: {outcome.error}"
+            )
+        return tail, Score(
+            passed=outcome.passed,
+            score=outcome.score,
+            details=f"{outcome.reason} ({outcome.seconds:.0f}s)".strip(),
+        )
 
 
 def _load_claweval_rows():

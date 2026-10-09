@@ -15,11 +15,11 @@ tools share one setup.
 | `tb-terminus` | coding | wired — TB 2.1 Harbor `--agent terminus-2`, LM Studio-routed (oracle PASS live) |
 | `tb-claude` | coding | wired — TB 2.1 Harbor `--agent claude-code` (needs `ANTHROPIC_API_KEY`) |
 | `tb-hermes` | coding | wired — TB 2.1 Harbor `--agent hermes` (Hermes-native model config) |
-| `hermes-bench` | agentic | scaffold — Nous HermesIndex suite is closed; `tb-hermes` is the proxy |
+| `hermes-bench` | agentic | wired — HermesBench v0.3.0, real Hermes Agent per task (61 tasks, live PASS) |
 | `swe-verified` | coding | wired — official docker FAIL_TO_PASS eval (gold-validated; heuristic fallback) |
 | `swe-pro` | coding | wired — Pro V2 Harbor tasks (`harbor run -p v2/tasks`, oracle PASS live; amd64 pre-pull on ARM) |
 | `swe-multilingual` | coding | wired — official docker eval when available, else heuristic |
-| `deepswe` | coding | wired — EvalScope Pier agent on `evalscope/deep-swe` (113 tasks, verifier acc; path proven end-to-end, live LM trial deferred to GPU-free) |
+| `deepswe` | coding | wired — EvalScope Pier agent on `evalscope/deep-swe` (113 tasks, verifier acc; live FAIL 0.0 logged) |
 | `frontier-bench` | coding | scaffold — Anthropic-reported, no public artifact (TB4 line tracked) |
 | `nl2repo` | coding | wired — shell-agent loop in per-task image + `verify_cmd` grading |
 | `swe-atlas-qna` | coding | wired — `ScaleAI/SWE-Atlas-QnA`, rubric-keyword recall (LLM judge next) |
@@ -30,7 +30,7 @@ tools share one setup.
 | `toolathlon` | agentic | wired — official remote service, private mode (108 Verified tasks, acc; path proven end-to-end incl. WS relay; one job at a time on the public service) |
 | `widesearch` | agentic | wired — `ByteDance-Seed/WideSearch`, column recall (cell judge next) |
 | `browsecomp` | agentic | wired — decrypted `smolagents/browse_comp`, containment (LLM grader next) |
-| `claweval` | agentic | wired — EvalScope pinned official runner (300 tasks, Pass³ via `BENCH_CLAW_TRIALS=3`; live trial deferred to GPU-free) |
+| `claweval` | agentic | wired — EvalScope pinned official runner (300 tasks, Pass³ via `BENCH_CLAW_TRIALS=3`; live PASS 1.0 logged) |
 | `demo` | reasoning | wired golden suite (2 tasks, no deps) |
 
 `wired` suites run end-to-end today. Without the optional `datasets` package

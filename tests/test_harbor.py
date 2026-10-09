@@ -392,9 +392,14 @@ def test_tb_hermes_requires_cli_and_skips_api_base(tmp_path, monkeypatch):
     assert "-a hermes" in joined and "api_base" not in joined
 
 
-def test_hermes_bench_defers_cleanly():
+def test_hermes_bench_offline_defers_cleanly(monkeypatch):
+    import benchharness.hermes_driver as hermes_mod
     from benchharness.registry import get_suite
 
+    def boom(timeout_secs=300.0):
+        raise RuntimeError("no network")
+
+    monkeypatch.setattr(hermes_mod, "ensure_repo", boom)
     tasks = get_suite("hermes-bench").tasks()
     assert len(tasks) == 1 and "skip_reason" in tasks[0].metadata
 
