@@ -143,6 +143,7 @@ uv run bench-harness run --suite swe-verified --suite hle --jobs 4
 uv run bench-harness run --suite all --limit 2 --out bench-results
 uv run bench-harness run --suite swe-pro --task openlibrary-00bec1e7   # one task by id substring
 BENCH_HARBOR_AGENT=oracle uv run bench-harness run --suite swe-pro --limit 1  # LM-free Harbor smoke
+uv run bench-harness compare bench-results/<run-a> bench-results/<run-b>  # per-suite pass@1 + delta
 uv run bench-harness inspect bench-results/<run-id>
 uv run bench-harness export bench-results/<run-id> --format json
 ```

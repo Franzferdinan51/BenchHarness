@@ -1,4 +1,4 @@
-"""CLI: bench-harness list-suites | doctor | run | inspect | export."""
+"""CLI: bench-harness list-suites | doctor | run | inspect | export | compare."""
 
 from __future__ import annotations
 
@@ -118,6 +118,64 @@ def cmd_inspect(args: argparse.Namespace) -> int:
     return 0
 
 
+def summarize_run(run_dir: Path) -> dict:
+    """Per-suite aggregates for one run dir: {model, run_id, suites}."""
+    results = read_results(run_dir / "results.jsonl")
+    suites: dict[str, dict] = {}
+    for r in results:
+        agg = suites.setdefault(r.suite, {"total": 0, "passed": 0,
+                                          "errors": 0, "skipped": 0,
+                                          "score_sum": 0.0})
+        if r.status == "skipped":
+            agg["skipped"] += 1
+        elif r.status == "error":
+            agg["errors"] += 1
+        else:
+            agg["total"] += 1
+            agg["passed"] += 1 if r.passed else 0
+            agg["score_sum"] += r.score or 0.0
+    for agg in suites.values():
+        n = agg["total"]
+        agg["pass_at_1"] = (agg["passed"] / n) if n else 0.0
+        agg["mean"] = (agg["score_sum"] / n) if n else 0.0
+    model = results[0].model if results else "?"
+    return {"model": model, "run_id": run_dir.name, "suites": suites}
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    runs = [summarize_run(Path(d)) for d in args.runs]
+    names = [f"{r['model']} ({r['run_id'][-6:]})" for r in runs]
+    suite_names = sorted({s for r in runs for s in r["suites"]})
+    table = Table(title="run comparison (pass@1, done tasks only)")
+    table.add_column("suite")
+    for n in names:
+        table.add_column(n)
+    if len(runs) == 2:
+        table.add_column("delta (b-a)")
+
+    def cell(agg):
+        if agg is None:
+            return "-"
+        return f"{agg['pass_at_1']:.3f} ({agg['passed']}/{agg['total']})"
+
+    for suite in suite_names:
+        aggs = [r["suites"].get(suite) for r in runs]
+        row = [suite] + [cell(a) for a in aggs]
+        if len(runs) == 2:
+            a, b = aggs
+            if a and b and a["total"] and b["total"]:
+                row.append(f"{b['pass_at_1'] - a['pass_at_1']:+.3f}")
+            else:
+                row.append("-")
+        table.add_row(*row)
+    console.print(table)
+    for r, n in zip(runs, names):
+        errs = sum(a["errors"] for a in r["suites"].values())
+        skips = sum(a["skipped"] for a in r["suites"].values())
+        console.print(f"{n}: errors={errs} skipped={skips}")
+    return 0
+
+
 def cmd_export(args: argparse.Namespace) -> int:
     run_dir = Path(args.run)
     results = read_results(run_dir / "results.jsonl")
@@ -172,6 +230,10 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--format", choices=["json", "jsonl"], default="json")
     e.add_argument("--output", default=None)
     e.set_defaults(func=cmd_export)
+
+    c = sub.add_parser("compare", help="compare two or more runs per suite")
+    c.add_argument("runs", nargs="+", help="run directories")
+    c.set_defaults(func=cmd_compare)
     return p
 
 

@@ -348,3 +348,54 @@ def test_swe_pro_wired_via_harbor():
     assert adapter.status == "wired"
     assert adapter.requirements()[0].name == "harbor"
     assert "scaleapi" in adapter.source
+
+
+def _write_run(path, model, rows):
+    from benchharness.schema import TaskResult
+
+    path.mkdir(parents=True, exist_ok=True)
+    with open(path / "results.jsonl", "w", encoding="utf-8") as fh:
+        for suite, task_id, passed, status, score in rows:
+            fh.write(TaskResult(run_id=path.name, model=model, suite=suite,
+                                task_id=task_id, passed=passed, status=status,
+                                score=score).to_json() + "\n")
+
+
+def test_summarize_run_aggregates(tmp_path):
+    from benchharness.cli import summarize_run
+
+    run = tmp_path / "run-a1"
+    _write_run(run, "model-a", [
+        ("demo", "t1", True, "done", 1.0),
+        ("demo", "t2", False, "done", 0.0),
+        ("demo", "t3", False, "error", 0.0),
+        ("demo", "t4", False, "skipped", 0.0),
+        ("hle", "h1", True, "done", 0.9),
+    ])
+    summary = summarize_run(run)
+    assert summary["model"] == "model-a"
+    demo = summary["suites"]["demo"]
+    assert (demo["total"], demo["passed"], demo["errors"],
+            demo["skipped"]) == (2, 1, 1, 1)
+    assert demo["pass_at_1"] == 0.5 and demo["mean"] == 0.5
+    assert summary["suites"]["hle"]["pass_at_1"] == 1.0
+
+
+def test_cmd_compare_two_runs(capsys, tmp_path):
+    import argparse
+
+    from benchharness.cli import cmd_compare
+
+    a = tmp_path / "run-aaa111"
+    b = tmp_path / "run-bbb222"
+    _write_run(a, "model-a", [("demo", "t1", True, "done", 1.0),
+                              ("demo", "t2", False, "done", 0.0)])
+    _write_run(b, "model-b", [("demo", "t1", True, "done", 1.0),
+                              ("demo", "t2", True, "done", 1.0),
+                              ("hle", "h1", True, "done", 1.0)])
+    args = argparse.Namespace(runs=[str(a), str(b)])
+    assert cmd_compare(args) == 0
+    out = capsys.readouterr().out
+    assert "model-a" in out and "model-b" in out
+    assert "+0.500" in out  # demo delta
+    assert "errors=0 skipped=0" in out
