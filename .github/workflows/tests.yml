@@ -16,5 +16,7 @@ jobs:
           python-version: "3.11"
       - name: Install
         run: uv pip install --system -e ".[dev]"
+      - name: Lint
+        run: ruff check benchharness tests && ruff format --check benchharness tests
       - name: Test
         run: pytest -q

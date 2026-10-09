@@ -43,9 +43,13 @@ def docker_daemon_status(timeout_secs: float = 20.0) -> tuple[bool, str]:
     if shutil.which("docker") is None:
         return False, "docker CLI not installed"
     try:
-        proc = subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"],
-                              capture_output=True, text=True,
-                              timeout=timeout_secs)
+        proc = subprocess.run(
+            ["docker", "info", "--format", "{{.ServerVersion}}"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_secs,
+        )
     except subprocess.TimeoutExpired:
         return False, f"docker info timed out after {timeout_secs:.0f}s"
     except OSError as exc:
@@ -63,13 +67,17 @@ def require_docker_daemon() -> str:
         raise RuntimeError(
             f"docker daemon unreachable ({detail}); start Colima/Docker "
             "Desktop before Harbor suites (live trial 2026-10-09 died "
-            "mid-run at AddTestsDirError when Colima stopped)")
+            "mid-run at AddTestsDirError when Colima stopped)"
+        )
     return detail
 
 
 def default_cache_dir() -> Path:
-    return Path(os.environ.get("BENCH_HARBOR_CACHE",
-                               Path.home() / ".cache" / "benchharness" / "harbor"))
+    return Path(
+        os.environ.get(
+            "BENCH_HARBOR_CACHE", Path.home() / ".cache" / "benchharness" / "harbor"
+        )
+    )
 
 
 def dataset_name_version(dataset: str) -> tuple[str, str]:
@@ -85,8 +93,9 @@ def dataset_dir_name(dataset: str) -> str:
     return name.rsplit("/", 1)[-1]
 
 
-def ensure_dataset(dataset: str, cache_dir: Path | None = None,
-                   timeout_secs: float = 300.0) -> Path:
+def ensure_dataset(
+    dataset: str, cache_dir: Path | None = None, timeout_secs: float = 300.0
+) -> Path:
     """Download (if needed) and return the local dataset directory."""
     cache = cache_dir or default_cache_dir()
     cache.mkdir(parents=True, exist_ok=True)
@@ -94,17 +103,24 @@ def ensure_dataset(dataset: str, cache_dir: Path | None = None,
     if dest.is_dir() and any(dest.iterdir()):
         return dest
     cmd = ["harbor", "download", dataset, "-o", str(cache)]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_secs)
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, timeout=timeout_secs, check=False
+    )
     if proc.returncode != 0 or not dest.is_dir():
-        raise RuntimeError(f"harbor download {dataset} failed: "
-                           f"{proc.stderr[-500:]} {proc.stdout[-500:]}")
+        raise RuntimeError(
+            f"harbor download {dataset} failed: "
+            f"{proc.stderr[-500:]} {proc.stdout[-500:]}"
+        )
     return dest
 
 
 def list_tasks(dataset_dir: Path) -> list[str]:
     """Task names are the dataset subdirectories containing task.toml."""
-    names = sorted(p.name for p in dataset_dir.iterdir()
-                   if p.is_dir() and (p / "task.toml").is_file())
+    names = sorted(
+        p.name
+        for p in dataset_dir.iterdir()
+        if p.is_dir() and (p / "task.toml").is_file()
+    )
     if not names:  # tolerate flat layout: any subdir counts
         names = sorted(p.name for p in dataset_dir.iterdir() if p.is_dir())
     return names
@@ -131,10 +147,21 @@ def build_run_command(
         cmd += ["-p", str(dataset_path)]
     else:
         cmd += ["-d", dataset]
-    cmd += ["-a", agent, "-m", model,
-            "-o", str(jobs_subdir), "--job-name", job_name,
-            "-n", str(n_concurrent), "-q",
-            "--timeout-multiplier", str(timeout_multiplier)]
+    cmd += [
+        "-a",
+        agent,
+        "-m",
+        model,
+        "-o",
+        str(jobs_subdir),
+        "--job-name",
+        job_name,
+        "-n",
+        str(n_concurrent),
+        "-q",
+        "--timeout-multiplier",
+        str(timeout_multiplier),
+    ]
     if memory_policy:
         cmd += ["--memory", memory_policy]
     if task:
@@ -185,25 +212,38 @@ def parse_trial_result(path: Path) -> TrialOutcome | None:
     error = ""
     exc = data.get("exception_info")
     if isinstance(exc, dict):
-        error = str(exc.get("exception_type", "")) + ": " + str(exc.get("message", ""))[:300]
+        error = (
+            str(exc.get("exception_type", ""))
+            + ": "
+            + str(exc.get("message", ""))[:300]
+        )
     elif data.get("exception_info"):
         error = str(data.get("exception_info"))[:300]
     seconds = 0.0
     for key in ("agent_execution", "verifier", "environment_setup", "agent_setup"):
         timing = data.get(key)
-        if isinstance(timing, dict) and isinstance(timing.get("duration"), (int, float)):
+        if isinstance(timing, dict) and isinstance(
+            timing.get("duration"), (int, float)
+        ):
             seconds += float(timing["duration"])
     if seconds == 0.0 and data.get("started_at") and data.get("finished_at"):
         try:
             from datetime import datetime
-            start = datetime.fromisoformat(str(data["started_at"]).replace("Z", "+00:00"))
-            end = datetime.fromisoformat(str(data["finished_at"]).replace("Z", "+00:00"))
+
+            # fromisoformat handles "Z" on Python 3.11+ (requires-python).
+            start = datetime.fromisoformat(str(data["started_at"]))
+            end = datetime.fromisoformat(str(data["finished_at"]))
             seconds = max(0.0, (end - start).total_seconds())
         except ValueError:
             pass
-    return TrialOutcome(task_name=str(data.get("task_name", path.parent.name)),
-                        passed=passed and not error, score=score if not error else 0.0,
-                        rewards=rewards, error=error, seconds=seconds)
+    return TrialOutcome(
+        task_name=str(data.get("task_name", path.parent.name)),
+        passed=passed and not error,
+        score=score if not error else 0.0,
+        rewards=rewards,
+        error=error,
+        seconds=seconds,
+    )
 
 
 def parse_job_dir(job_dir: Path) -> list[TrialOutcome]:
@@ -231,19 +271,31 @@ def parse_job_dir(job_dir: Path) -> list[TrialOutcome]:
                         if isinstance(verifier.get("rewards"), dict):
                             rewards = dict(verifier["rewards"])
                         passed, score = _trial_passed(rewards)
-                        outcomes.append(TrialOutcome(
-                            task_name=str(item.get("task_name")), passed=passed,
-                            score=score, rewards=rewards))
+                        outcomes.append(
+                            TrialOutcome(
+                                task_name=str(item.get("task_name")),
+                                passed=passed,
+                                score=score,
+                                rewards=rewards,
+                            )
+                        )
     return outcomes
 
 
-def run_job(cmd: list[str], timeout_secs: float,
-            env: dict[str, str] | None = None) -> tuple[int, str]:
+def run_job(
+    cmd: list[str], timeout_secs: float, env: dict[str, str] | None = None
+) -> tuple[int, str]:
     """Run a harbor job; returns (returncode, tail-of-output). Never raises."""
     started = time.monotonic()
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=timeout_secs, env=env)
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_secs,
+            env=env,
+            check=False,
+        )
         out = (proc.stdout[-2000:] + "\n" + proc.stderr[-2000:]).strip()
         return proc.returncode, out
     except subprocess.TimeoutExpired as exc:
@@ -268,13 +320,23 @@ def ensure_image(image: str, timeout_secs: float = 900.0) -> bool:
     from benchharness.sandbox import run_local
 
     try:
-        if run_local(["docker", "image", "inspect", image],
-                     timeout_secs=60.0).exit_code == 0:
+        if (
+            run_local(
+                ["docker", "image", "inspect", image], timeout_secs=60.0
+            ).exit_code
+            == 0
+        ):
             return True
-        run_local(["docker", "pull", "--platform", "linux/amd64", image],
-                  timeout_secs=timeout_secs)
-        return run_local(["docker", "image", "inspect", image],
-                         timeout_secs=60.0).exit_code == 0
+        run_local(
+            ["docker", "pull", "--platform", "linux/amd64", image],
+            timeout_secs=timeout_secs,
+        )
+        return (
+            run_local(
+                ["docker", "image", "inspect", image], timeout_secs=60.0
+            ).exit_code
+            == 0
+        )
     except Exception:
         return False
 

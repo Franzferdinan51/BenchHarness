@@ -8,3 +8,4 @@ bench-results/
 .pytest_cache/
 *.jsonl.tmp
 logs/
+.DS_Store

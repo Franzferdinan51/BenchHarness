@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import re
 
-GRADER_TEMPLATE = """
+# ruff: noqa: E501 -- GRADER_TEMPLATE is a verbatim simple-evals port; wraps would alter the prompt.
+
+GRADER_TEMPLATE = r"""
 Judge whether the following [response] to [question] is correct or not based on the precise and unambiguous [correct_answer] below.
 
 [question]: {question}
@@ -42,12 +44,20 @@ def parse_verdict(text: str) -> bool | None:
     return matches[-1].lower() == "yes"
 
 
-def judge_correct(client, model: str, question: str, correct_answer: str,
-                  response: str, max_tokens: int = 1024) -> tuple[bool | None, str]:
+def judge_correct(
+    client,
+    model: str,
+    question: str,
+    correct_answer: str,
+    response: str,
+    max_tokens: int = 1024,
+) -> tuple[bool | None, str]:
     """Ask the judge model; returns (verdict, raw_judge_text)."""
-    prompt = GRADER_TEMPLATE.format(question=question, correct_answer=correct_answer,
-                                    response=response)
-    resp = client.chat([{"role": "user", "content": prompt}], model=model,
-                       max_tokens=max_tokens)
+    prompt = GRADER_TEMPLATE.format(
+        question=question, correct_answer=correct_answer, response=response
+    )
+    resp = client.chat(
+        [{"role": "user", "content": prompt}], model=model, max_tokens=max_tokens
+    )
     raw = client.extract_text(resp)
     return parse_verdict(raw), raw

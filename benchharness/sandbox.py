@@ -39,8 +39,13 @@ def run_local(
 ) -> ExecResult:
     try:
         proc = subprocess.run(
-            argv, cwd=cwd, capture_output=True, text=True,
-            timeout=timeout_secs, env=env,
+            argv,
+            cwd=cwd,
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=timeout_secs,
+            env=env,
         )
         return ExecResult(proc.returncode, proc.stdout[-8000:], proc.stderr[-8000:])
     except subprocess.TimeoutExpired as exc:
@@ -61,8 +66,18 @@ def run_docker(
     if not have_docker():
         raise SandboxUnavailable("docker CLI not found")
     workdir.mkdir(parents=True, exist_ok=True)
-    cmd = ["docker", "run", "--rm", f"--network={network}",
-           "-v", f"{workdir.resolve()}:/w", "-w", "/w", image, *argv]
+    cmd = [
+        "docker",
+        "run",
+        "--rm",
+        f"--network={network}",
+        "-v",
+        f"{workdir.resolve()}:/w",
+        "-w",
+        "/w",
+        image,
+        *argv,
+    ]
     return run_local(cmd, timeout_secs=timeout_secs)
 
 

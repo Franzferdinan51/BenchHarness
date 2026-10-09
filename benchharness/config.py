@@ -1,6 +1,7 @@
 """Configuration. Precedence mirrors local-grok-cli's endpoints module:
 
-- Inference base URL: ``GROK_MODELS_BASE_URL`` > ``LM_STUDIO_URL`` > ``http://127.0.0.1:1234/v1``
+- Inference base URL: ``GROK_MODELS_BASE_URL`` > ``LM_STUDIO_URL`` >
+  ``http://127.0.0.1:1234/v1``
 - Bearer [REDACTED] ``LM_STUDIO_API_KEY`` else dummy ``lm-studio`` (unprotected servers)
 - Model: ``LM_STUDIO_MODEL`` > ``GROK_MODEL`` > first loaded chat model
 - Connect timeout: ``GROK_CONNECT_TIMEOUT_SECS`` (default 2 for pings)
@@ -67,7 +68,7 @@ class BenchConfig:
     source_file: str | None = None
 
     @classmethod
-    def load(cls, cli_overrides: dict | None = None) -> "BenchConfig":
+    def load(cls, cli_overrides: dict | None = None) -> BenchConfig:
         file_data: dict = {}
         source: str | None = None
         for loc in CONFIG_LOCATIONS:
@@ -86,8 +87,7 @@ class BenchConfig:
             or LM_STUDIO_BASE_URL_DEFAULT
         )
         cfg.base_url = base.rstrip("/")
-        if cfg.base_url.endswith("/chat/completions"):
-            cfg.base_url = cfg.base_url[: -len("/chat/completions")]
+        cfg.base_url = cfg.base_url.removesuffix("/chat/completions")
 
         cfg.api_key = (
             _nonblank(os.environ.get(LM_STUDIO_API_KEY_ENV_VAR))
@@ -101,7 +101,9 @@ class BenchConfig:
         )
         try:
             cfg.connect_timeout_secs = float(
-                os.environ.get("GROK_CONNECT_TIMEOUT_SECS", lm.get("connect_timeout_secs", 2.0))
+                os.environ.get(
+                    "GROK_CONNECT_TIMEOUT_SECS", lm.get("connect_timeout_secs", 2.0)
+                )
             )
         except ValueError:
             cfg.connect_timeout_secs = 2.0
@@ -115,11 +117,14 @@ class BenchConfig:
         if cfg.jobs < 1:
             raise ValueError(f"jobs must be >= 1 (sequential=1), got {cfg.jobs}")
         cfg.harbor_timeout_secs = float(
-            os.environ.get("BENCH_HARBOR_TIMEOUT", run.get("harbor_timeout_secs", 1800.0))
+            os.environ.get(
+                "BENCH_HARBOR_TIMEOUT", run.get("harbor_timeout_secs", 1800.0)
+            )
         )
         cfg.evalscope_timeout_secs = float(
-            os.environ.get("BENCH_EVALSCOPE_TIMEOUT",
-                           run.get("evalscope_timeout_secs", 5400.0))
+            os.environ.get(
+                "BENCH_EVALSCOPE_TIMEOUT", run.get("evalscope_timeout_secs", 5400.0)
+            )
         )
         # Task memory limits assume native amd64; under qemu emulation on
         # Apple Silicon the 2G default OOM-kills trials (exit 137).
@@ -136,8 +141,9 @@ class BenchConfig:
         mt = _nonblank(os.environ.get("BENCH_MAX_TOKENS")) or run.get("max_tokens")
         cfg.max_tokens_override = int(mt) if mt is not None else None
         cfg.per_task_timeout_secs = float(
-            os.environ.get("BENCH_PER_TASK_TIMEOUT",
-                           run.get("per_task_timeout_secs", 600.0))
+            os.environ.get(
+                "BENCH_PER_TASK_TIMEOUT", run.get("per_task_timeout_secs", 600.0)
+            )
         )
         out = run.get("out_dir", "bench-results")
         cfg.out_dir = Path(out)
@@ -151,6 +157,5 @@ class BenchConfig:
     def server_root(self) -> str:
         """Origin without the trailing /v1, for native /api/v0/* calls."""
         base = self.base_url.rstrip("/")
-        if base.endswith("/v1"):
-            base = base[: -len("/v1")]
+        base = base.removesuffix("/v1")
         return base

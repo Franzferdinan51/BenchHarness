@@ -30,7 +30,9 @@ def strip_thinking(text: str) -> str:
     """
     cleaned = _THINK_RE.sub("", text)
     # Unterminated block (truncated at cap): drop from the opener on.
-    cleaned = re.sub(r"<think(?:ing)?>.*$", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(
+        r"<think(?:ing)?>.*$", "", cleaned, flags=re.DOTALL | re.IGNORECASE
+    )
     return cleaned.strip()
 
 
@@ -60,6 +62,7 @@ def _requirement_missing(req: Requirement) -> bool:
         return not _have_env(req.name)
     if req.kind == "evalscope":
         from benchharness.evalscope_driver import evalscope_python
+
         return not evalscope_python().is_file()
     return False  # docker/note checked at execution time or informational
 
@@ -85,10 +88,12 @@ class SuiteAdapter(ABC):
                 missing.append(req)
         return missing
 
-    def prepare(self, workdir: Path) -> None:
+    def prepare(self, workdir: Path) -> None:  # noqa: B027
         """Optional per-run setup (download data, build images). No-op default."""
 
-    def score_with_client(self, output: str, task: Task, client, model: str) -> Score | None:
+    def score_with_client(
+        self, output: str, task: Task, client, model: str
+    ) -> Score | None:
         """LLM-judge grading hook. Return a Score to use the judge verdict,
         or None to keep the synchronous score(). Only called when judging
         is enabled (BENCH_JUDGE=1)."""
@@ -104,8 +109,7 @@ class SuiteAdapter(ABC):
         return None
 
     @abstractmethod
-    def tasks(self, limit: int | None = None) -> list[Task]:
-        ...
+    def tasks(self, limit: int | None = None) -> list[Task]: ...
 
     def messages(self, task: Task) -> list[dict]:
         msgs: list[dict] = []
@@ -115,8 +119,7 @@ class SuiteAdapter(ABC):
         return msgs
 
     @abstractmethod
-    def score(self, output: str, task: Task) -> Score:
-        ...
+    def score(self, output: str, task: Task) -> Score: ...
 
 
 def _have_module(name: str) -> bool:

@@ -53,9 +53,7 @@ def parse_models_payload(body: dict) -> tuple[list[DiscoveredModel], str]:
             continue
         seen.add(model_id)
         kind = str(item.get("type", "") or "")
-        loaded = (
-            str(item.get("state", "")).lower() == "loaded" if v0 else True
-        )
+        loaded = str(item.get("state", "")).lower() == "loaded" if v0 else True
         ctx = item.get("max_context_length", item.get("maxContextLength"))
         out.append(
             DiscoveredModel(
@@ -90,20 +88,23 @@ def select_chat_models(models: list[DiscoveredModel]) -> list[DiscoveredModel]:
 
 
 class LMStudioClient:
-    def __init__(self, config: BenchConfig, transport: httpx.BaseTransport | None = None):
+    def __init__(
+        self, config: BenchConfig, transport: httpx.BaseTransport | None = None
+    ):
         self.config = config
         self._client = httpx.Client(
             base_url=config.base_url,
             headers={"Authorization": f"Bearer {config.api_key}"},
-            timeout=httpx.Timeout(config.request_timeout_secs,
-                                  connect=config.connect_timeout_secs),
+            timeout=httpx.Timeout(
+                config.request_timeout_secs, connect=config.connect_timeout_secs
+            ),
             transport=transport,
         )
 
     def close(self) -> None:
         self._client.close()
 
-    def __enter__(self) -> "LMStudioClient":
+    def __enter__(self) -> LMStudioClient:
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -161,11 +162,16 @@ class LMStudioClient:
             return want
         cands = [i for i in ids if want in i or i in want]
         if len(cands) == 1:
-            print(f"warning: model {want!r} fuzzy-matched to {cands[0]!r}",
-                  file=_sys.stderr)
+            print(
+                f"warning: model {want!r} fuzzy-matched to {cands[0]!r}",
+                file=_sys.stderr,
+            )
             return cands[0]
-        print(f"warning: model {want!r} not loaded; using {ids[0]!r} "
-              f"(loaded: {', '.join(ids[:8])})", file=_sys.stderr)
+        print(
+            f"warning: model {want!r} not loaded; using {ids[0]!r} "
+            f"(loaded: {', '.join(ids[:8])})",
+            file=_sys.stderr,
+        )
         return ids[0]
 
     def ping(self) -> dict:
@@ -195,7 +201,9 @@ class LMStudioClient:
             # trusts the configured id (no discovery call per request).
             "model": model or self.config.model or self.resolve_model(),
             "messages": messages,
-            "temperature": self.config.temperature if temperature is None else temperature,
+            "temperature": self.config.temperature
+            if temperature is None
+            else temperature,
             "max_tokens": max_tokens,
             "stream": False,
         }
@@ -243,4 +251,6 @@ class LMStudioClient:
     @staticmethod
     def extract_usage(response: dict) -> tuple[int, int]:
         usage = response.get("usage") or {}
-        return int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0))
+        return int(usage.get("prompt_tokens", 0)), int(
+            usage.get("completion_tokens", 0)
+        )

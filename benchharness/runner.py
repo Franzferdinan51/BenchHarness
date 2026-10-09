@@ -8,7 +8,7 @@ import re
 import time
 import uuid
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from benchharness.config import BenchConfig
@@ -45,12 +45,14 @@ def run_tool_loop(
         code = m.group(1).strip()
         result = run_python_snippet(code)
         messages.append({"role": "assistant", "content": output})
-        messages.append({
-            "role": "user",
-            "content": f"tool(run_python) exit={result.exit_code}\n"
-                       f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}\n"
-                       "Continue: either use the tool again or give the final answer.",
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": f"tool(run_python) exit={result.exit_code}\n"
+                f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}\n"
+                "Continue: either use the tool again or give the final answer.",
+            }
+        )
     return output, prompt_tokens, completion_tokens
 
 
@@ -70,28 +72,48 @@ def evaluate_task(
     workdir: Path | None = None,
 ) -> TaskResult:
     if task.metadata.get("skip_reason"):
-        return TaskResult(run_id=run_id, model=model, suite=adapter.name,
-                          task_id=task.task_id, passed=False, status="skipped",
-                          error=str(task.metadata["skip_reason"]))
+        return TaskResult(
+            run_id=run_id,
+            model=model,
+            suite=adapter.name,
+            task_id=task.task_id,
+            passed=False,
+            status="skipped",
+            error=str(task.metadata["skip_reason"]),
+        )
     started = time.monotonic()
     hook = getattr(adapter, "run_external", None)
     if callable(hook):
         try:
-            ctx = {"model": model, "config": config, "run_id": run_id,
-                   "workdir": workdir or Path.cwd(), "client": client}
+            ctx = {
+                "model": model,
+                "config": config,
+                "run_id": run_id,
+                "workdir": workdir or Path.cwd(),
+                "client": client,
+            }
             ext = hook(task, ctx)
             if ext is not None:
                 excerpt, score = ext
                 return TaskResult(
-                    run_id=run_id, model=model, suite=adapter.name,
-                    task_id=task.task_id, passed=score.passed, score=score.score,
+                    run_id=run_id,
+                    model=model,
+                    suite=adapter.name,
+                    task_id=task.task_id,
+                    passed=score.passed,
+                    score=score.score,
                     latency_ms=int((time.monotonic() - started) * 1000),
-                    details=score.details, output_excerpt=(excerpt or "")[:500],
+                    details=score.details,
+                    output_excerpt=(excerpt or "")[:500],
                 )
         except Exception as exc:
             return TaskResult(
-                run_id=run_id, model=model, suite=adapter.name, task_id=task.task_id,
-                passed=False, status="error",
+                run_id=run_id,
+                model=model,
+                suite=adapter.name,
+                task_id=task.task_id,
+                passed=False,
+                status="error",
                 error=f"external run failed: {type(exc).__name__}: {exc}",
                 latency_ms=int((time.monotonic() - started) * 1000),
             )
@@ -120,23 +142,35 @@ def evaluate_task(
                 judged = None
                 details = f"{details} [judge error: {exc}]".strip()
             if judged is not None:
-                details = (f"judge={'pass' if judged.passed else 'fail'} "
-                           f"({judged.details}); heuristic={details}")
+                details = (
+                    f"judge={'pass' if judged.passed else 'fail'} "
+                    f"({judged.details}); heuristic={details}"
+                )
                 score = judged
                 judged.details = details
         return TaskResult(
-            run_id=run_id, model=model, suite=adapter.name, task_id=task.task_id,
-            passed=score.passed, score=score.score,
+            run_id=run_id,
+            model=model,
+            suite=adapter.name,
+            task_id=task.task_id,
+            passed=score.passed,
+            score=score.score,
             latency_ms=int((time.monotonic() - started) * 1000),
-            prompt_tokens=pt, completion_tokens=ct,
+            prompt_tokens=pt,
+            completion_tokens=ct,
             details=details,
             output_excerpt=output[:500],
             reasoning_excerpt=reasoning[-500:] if reasoning else "",
         )
     except Exception as exc:  # per-task isolation: record, don't crash the run
         return TaskResult(
-            run_id=run_id, model=model, suite=adapter.name, task_id=task.task_id,
-            passed=False, status="error", error=f"{type(exc).__name__}: {exc}",
+            run_id=run_id,
+            model=model,
+            suite=adapter.name,
+            task_id=task.task_id,
+            passed=False,
+            status="error",
+            error=f"{type(exc).__name__}: {exc}",
             latency_ms=int((time.monotonic() - started) * 1000),
         )
 
@@ -150,7 +184,7 @@ def run_suites(
     task_filter: list[str] | None = None,
 ) -> tuple[Path, RunSummary]:
     """Run suites; returns (run_dir, summary). Streams results to JSONL."""
-    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:6]
+    run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:6]
     run_dir = config.out_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     results_path = run_dir / "results.jsonl"
@@ -163,7 +197,7 @@ def run_suites(
         for r in prior:
             append_result(results_path, r)
 
-    started_at = datetime.now(timezone.utc).isoformat()
+    started_at = datetime.now(UTC).isoformat()
     work: list[tuple[SuiteAdapter, Task]] = []
     skipped: list[TaskResult] = []
     for name in suite_names:
@@ -171,18 +205,33 @@ def run_suites(
         missing = adapter.missing_requirements(hard_only=True)
         if missing:
             reason = "missing: " + ", ".join(f"{m.kind}:{m.name}" for m in missing)
-            skipped.append(TaskResult(run_id=run_id, model=config.model or "?",
-                                      suite=name, task_id="*",
-                                      passed=False, status="skipped", error=reason))
+            skipped.append(
+                TaskResult(
+                    run_id=run_id,
+                    model=config.model or "?",
+                    suite=name,
+                    task_id="*",
+                    passed=False,
+                    status="skipped",
+                    error=reason,
+                )
+            )
             continue
         try:
             adapter.prepare(run_dir / "work" / name)
             tasks = adapter.tasks(limit)
         except Exception as exc:
-            skipped.append(TaskResult(
-                run_id=run_id, model=config.model or "?", suite=name,
-                task_id="*", passed=False, status="error",
-                error=f"prepare/tasks failed: {type(exc).__name__}: {exc}"))
+            skipped.append(
+                TaskResult(
+                    run_id=run_id,
+                    model=config.model or "?",
+                    suite=name,
+                    task_id="*",
+                    passed=False,
+                    status="error",
+                    error=f"prepare/tasks failed: {type(exc).__name__}: {exc}",
+                )
+            )
             continue
         for task in tasks:
             if task_filter and not any(f in task.task_id for f in task_filter):
@@ -223,8 +272,10 @@ def run_suites(
             started_all = time.monotonic()
             for item in work:
                 adapter = item[0]
-                budget = getattr(adapter, "task_timeout_secs", None) or \
-                    config.per_task_timeout_secs
+                budget = (
+                    getattr(adapter, "task_timeout_secs", None)
+                    or config.per_task_timeout_secs
+                )
                 fut = pool.submit(_one, item)
                 pending[fut] = item
                 budgets[fut] = budget
@@ -232,8 +283,9 @@ def run_suites(
             while pending:
                 now = time.monotonic()
                 wait_for = max(0.05, min(deadlines[f] for f in pending) - now)
-                done, _ = wait(list(pending), timeout=wait_for,
-                               return_when=FIRST_COMPLETED)
+                done, _ = wait(
+                    list(pending), timeout=wait_for, return_when=FIRST_COMPLETED
+                )
                 for fut in done:
                     results.append(fut.result())
                     append_result(results_path, results[-1])
@@ -246,8 +298,12 @@ def run_suites(
                         timed_out = True
                         fut.cancel()
                         res = TaskResult(
-                            run_id=run_id, model=model, suite=adapter.name,
-                            task_id=task.task_id, passed=False, status="error",
+                            run_id=run_id,
+                            model=model,
+                            suite=adapter.name,
+                            task_id=task.task_id,
+                            passed=False,
+                            status="error",
                             error=f"timeout after {budgets[fut]:g}s",
                         )
                         results.append(res)

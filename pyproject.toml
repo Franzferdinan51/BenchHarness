@@ -14,7 +14,7 @@ dependencies = [
 datasets = ["datasets>=2.14", "huggingface-hub>=0.20"]
 swe = ["swebench>=3.0", "datasets>=2.14"]
 claw = ["modelscope>=1.30", "addict>=2.4", "datasets>=2.14"]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.8"]
 
 [project.scripts]
 bench-harness = "benchharness.cli:main"
@@ -28,3 +28,20 @@ packages = ["benchharness"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "PLW", "PERF", "PIE", "FURB", "ISC", "S"]
+ignore = [
+    # Broad catches are intentional isolation boundaries: one bad dataset
+    # row, optional import, or adapter must not kill a whole benchmark run.
+    "BLE001",
+    # False positive on runtime files: both __enter__ methods return self.
+    "PYI034",
+    # All subprocess calls use argv lists, never shell=True (S602 stays on).
+    "S603",
+    # docker/harbor/python resolve via PATH by design (Colima shims).
+    "S607",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]

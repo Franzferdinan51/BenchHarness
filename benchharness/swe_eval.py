@@ -34,7 +34,7 @@ def docker_daemon_reachable() -> bool:
 
 def swebench_available() -> bool:
     try:
-        import swebench.harness.run_evaluation  # noqa: F401
+        import swebench.harness.run_evaluation
         import swebench.harness.utils  # noqa: F401
     except Exception:
         return False
@@ -80,15 +80,18 @@ def ensure_image(image: str, timeout_secs: float = 1800.0) -> None:
     swebench pulls via docker-py without a platform, which 404s on arm64
     daemons for amd64-only images. Pre-pulling with the CLI flag fixes it.
     """
-    have = subprocess.run(["docker", "images", "-q", image],
-                          capture_output=True, text=True)
+    have = subprocess.run(
+        ["docker", "images", "-q", image], capture_output=True, text=True, check=False
+    )
     if have.returncode == 0 and have.stdout.strip():
         return
     cmd = ["docker", "pull"]
     if platform.machine().lower() in ("arm64", "aarch64"):
         cmd += ["--platform", "linux/amd64"]
     cmd.append(image)
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_secs)
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, timeout=timeout_secs, check=False
+    )
     if proc.returncode != 0:
         raise RuntimeError(f"docker pull {image} failed: {proc.stderr[-400:]}")
 
@@ -140,21 +143,36 @@ def grade_with_docker(
             report_dir=str(workdir),
         )
     except Exception as exc:
-        return DockerGrade(resolved=False,
-                           details=f"swebench eval crashed: {type(exc).__name__}: {exc}")
+        return DockerGrade(
+            resolved=False,
+            details=f"swebench eval crashed: {type(exc).__name__}: {exc}",
+        )
     try:
         report = json.loads(Path(str(report_path)).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         return DockerGrade(resolved=False, details=f"unreadable report: {exc}")
     resolved_ids = report.get("resolved_ids", report.get("resolved", [])) or []
     if instance_id in resolved_ids:
-        return DockerGrade(resolved=True, details="FAIL_TO_PASS passed (official docker eval)",
-                           report_path=str(report_path))
-    for key, label in (("error_ids", "eval error"), ("infra_failure_ids", "infra failure"),
-                       ("empty_patch_ids", "empty patch"),
-                       ("unresolved_ids", "unresolved"), ("unresolved", "unresolved")):
+        return DockerGrade(
+            resolved=True,
+            details="FAIL_TO_PASS passed (official docker eval)",
+            report_path=str(report_path),
+        )
+    for key, label in (
+        ("error_ids", "eval error"),
+        ("infra_failure_ids", "infra failure"),
+        ("empty_patch_ids", "empty patch"),
+        ("unresolved_ids", "unresolved"),
+        ("unresolved", "unresolved"),
+    ):
         if instance_id in (report.get(key, []) or []):
-            return DockerGrade(resolved=False, details=f"{label} (official docker eval)",
-                               report_path=str(report_path))
-    return DockerGrade(resolved=False, details="not in report (see report file)",
-                       report_path=str(report_path))
+            return DockerGrade(
+                resolved=False,
+                details=f"{label} (official docker eval)",
+                report_path=str(report_path),
+            )
+    return DockerGrade(
+        resolved=False,
+        details="not in report (see report file)",
+        report_path=str(report_path),
+    )

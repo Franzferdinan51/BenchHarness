@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 from benchharness.config import BenchConfig
 from benchharness.lm_client import (
     is_chat_model,
@@ -16,17 +14,36 @@ from benchharness.suites.reasoning import extract_letter, normalize_answer
 
 
 def test_task_result_jsonl_roundtrip():
-    r = TaskResult(run_id="r1", model="m", suite="demo", task_id="t1",
-                   passed=True, score=1.0, latency_ms=12)
+    r = TaskResult(
+        run_id="r1",
+        model="m",
+        suite="demo",
+        task_id="t1",
+        passed=True,
+        score=1.0,
+        latency_ms=12,
+    )
     assert TaskResult.from_json(r.to_json()) == r
 
 
 def test_summary_aggregation():
-    mk = lambda tid, passed, status="done", score=None: TaskResult(
-        run_id="r", model="m", suite="demo", task_id=tid, passed=passed,
-        score=(1.0 if passed else 0.0) if score is None else score, status=status)
-    results = [mk("a", True), mk("b", False), mk("c", False, status="error"),
-               mk("d", False, status="skipped")]
+    def mk(tid, passed, status="done", score=None):
+        return TaskResult(
+            run_id="r",
+            model="m",
+            suite="demo",
+            task_id=tid,
+            passed=passed,
+            score=(1.0 if passed else 0.0) if score is None else score,
+            status=status,
+        )
+
+    results = [
+        mk("a", True),
+        mk("b", False),
+        mk("c", False, status="error"),
+        mk("d", False, status="skipped"),
+    ]
     s = RunSummary.from_results("r", "m", ["demo"], "t0", results)
     assert (s.total, s.passed, s.errors, s.skipped) == (4, 1, 1, 1)
     assert s.pass_at_1 == 1 / 3
@@ -50,12 +67,14 @@ def test_config_chat_completions_suffix_stripped(monkeypatch):
 
 
 def test_picker_hides_embeddings_and_prefers_v0(tmp_path):
-    body = {"data": [
-        {"id": "emb", "type": "embeddings", "state": "loaded"},
-        {"id": "lib-model", "type": "llm", "state": "not-loaded"},
-        {"id": "loaded-model", "type": "llm", "state": "loaded"},
-        {"id": "sneaky-embed-llm", "type": "llm", "state": "loaded"},
-    ]}
+    body = {
+        "data": [
+            {"id": "emb", "type": "embeddings", "state": "loaded"},
+            {"id": "lib-model", "type": "llm", "state": "not-loaded"},
+            {"id": "loaded-model", "type": "llm", "state": "loaded"},
+            {"id": "sneaky-embed-llm", "type": "llm", "state": "loaded"},
+        ]
+    }
     models, shape = parse_models_payload(body)
     assert shape == "v0"
     chat = select_chat_models(models)
@@ -73,7 +92,13 @@ def test_v1_shape_marks_loaded():
 def test_gpqa_letter_extraction():
     assert extract_letter("Answer: C") == "C"
     assert extract_letter("I think (B) is right") == "B"
-    assert extract_letter("no letters here....".upper().lower()) in ("", "A", "B", "C", "D")
+    assert extract_letter("no letters here....".upper().lower()) in (
+        "",
+        "A",
+        "B",
+        "C",
+        "D",
+    )
 
 
 def test_normalize_answer():
@@ -83,6 +108,7 @@ def test_normalize_answer():
 
 def test_strip_thinking():
     from benchharness.suites.base import strip_thinking
+
     assert strip_thinking("<think>maybe B... no, C</think>Answer: C") == "Answer: C"
     assert strip_thinking("<THINKING>draft diff --git a/x</THINKING>done") == "done"
     assert strip_thinking("<think>unclosed trail") == ""
@@ -92,16 +118,20 @@ def test_strip_thinking():
 def test_think_decoys_ignored_by_scorers():
     from benchharness.registry import get_suite
     from benchharness.suites.base import Task
+
     gpqa = get_suite("gpqa-diamond")
     task = Task(task_id="t", prompt="p", reference="C")
     assert gpqa.score("<think>Answer: A? or B?</think>Final: C", task).passed
     hle = get_suite("hle")
-    assert hle.score("<think>Paris? London?</think>Paris",
-                     Task(task_id="t", prompt="p", reference="Paris")).passed
+    assert hle.score(
+        "<think>Paris? London?</think>Paris",
+        Task(task_id="t", prompt="p", reference="Paris"),
+    ).passed
 
 
 def test_judge_verdict_parsing():
     from benchharness.judge import parse_verdict
+
     assert parse_verdict("reasoning: ok\ncorrect: yes") is True
     assert parse_verdict("Correct: (no)") is False
     assert parse_verdict("correct: YES") is True
@@ -112,6 +142,7 @@ def test_judge_verdict_parsing():
 
 def test_judge_config_flag(monkeypatch):
     from benchharness.config import BenchConfig
+
     assert BenchConfig.load().judge_enabled is False
     monkeypatch.setenv("BENCH_JUDGE", "1")
     assert BenchConfig.load().judge_enabled is True
@@ -122,19 +153,23 @@ def test_judge_config_flag(monkeypatch):
 def test_browsecomp_decrypt_roundtrip():
     import base64
     import hashlib
+
     from benchharness.suites.agentic import browsecomp_decrypt
+
     canary = "BENCHMARK DATA SHOULD NEVER APPEAR IN TRAINING"
     plain = "What is the airspeed velocity?"
     digest = hashlib.sha256(canary.encode()).digest()
-    key = digest * (len(plain) // len(digest) + 1)
-    cipher = base64.b64encode(bytes(a ^ b for a, b in
-                                    zip(plain.encode(), key))).decode()
+    key = (digest * (len(plain) // len(digest) + 1))[: len(plain)]
+    cipher = base64.b64encode(
+        bytes(a ^ b for a, b in zip(plain.encode(), key, strict=True))
+    ).decode()
     assert browsecomp_decrypt(cipher, canary) == plain
 
 
 def test_widesearch_column_recall():
     from benchharness.registry import get_suite
     from benchharness.suites.base import Task
+
     ws = get_suite("widesearch")
     ref = '{"required": ["ocean", "area"], "eval_pipeline": {}}'
     task = Task(task_id="t", prompt="p", reference=ref)
@@ -148,9 +183,11 @@ def test_widesearch_column_recall():
 def test_atlas_rubric_recall():
     from benchharness.registry import get_suite
     from benchharness.suites.base import Task
+
     atlas = get_suite("swe-atlas-qna")
-    task = Task(task_id="t", prompt="p", reference="",
-                metadata={"rubric": "retry backoff lib"})
+    task = Task(
+        task_id="t", prompt="p", reference="", metadata={"rubric": "retry backoff lib"}
+    )
     assert atlas.score("The retry helper with backoff lives in lib.", task).passed
     assert not atlas.score("Something unrelated entirely.", task).passed
 
@@ -159,9 +196,18 @@ def test_claweval_enumerates_with_defer(monkeypatch):
     import benchharness.suites.agentic as agentic_mod
     from benchharness.registry import get_suite
 
-    rows = [("general", {"task_id": "T001", "query": "triage email",
-                               "fixture": "f", "language": "en",
-                               "category": "communication"})]
+    rows = [
+        (
+            "general",
+            {
+                "task_id": "T001",
+                "query": "triage email",
+                "fixture": "f",
+                "language": "en",
+                "category": "communication",
+            },
+        )
+    ]
     monkeypatch.setattr(agentic_mod, "_load_claweval_rows", lambda: rows)
     tasks = get_suite("claweval").tasks()
     assert len(tasks) == 1 and tasks[0].task_id == "T001"
@@ -176,9 +222,13 @@ def test_claweval_enumerates_with_defer(monkeypatch):
 def test_mcp_claim_recall():
     from benchharness.registry import get_suite
     from benchharness.suites.base import Task
+
     mcp = get_suite("mcp-atlas")
-    task = Task(task_id="t", prompt="p",
-                reference="The AssaultCube repository was created in 2013.")
+    task = Task(
+        task_id="t",
+        prompt="p",
+        reference="The AssaultCube repository was created in 2013.",
+    )
     assert mcp.score("AssaultCube repository created 2013.", task).passed
 
 
@@ -186,6 +236,7 @@ def test_hf_loader_split_fallback(monkeypatch):
     """Loader tries test -> train -> validation before giving up."""
     import sys
     import types
+
     import benchharness.suites.reasoning as reasoning_mod
 
     calls: list[str] = []
@@ -214,24 +265,35 @@ def test_swe_pro_lowercase_keys_mapped(monkeypatch):
     import benchharness.suites.coding as coding_mod
     from benchharness.registry import get_suite
 
-    rows = [{"instance_id": "i1", "repo": "r", "base_commit": "c",
-             "patch": "p", "problem_statement": "ps", "hints_text": "",
-             "fail_to_pass": ["t1"], "pass_to_pass": ["t2"]}]
+    rows = [
+        {
+            "instance_id": "i1",
+            "repo": "r",
+            "base_commit": "c",
+            "patch": "p",
+            "problem_statement": "ps",
+            "hints_text": "",
+            "fail_to_pass": ["t1"],
+            "pass_to_pass": ["t2"],
+        }
+    ]
     monkeypatch.setattr(coding_mod, "_load_hf_dataset", lambda *a, **k: rows)
     tasks = get_suite("swe-multilingual").tasks()
-    assert tasks[0].metadata["fail_to_pass"] == "['t1']"
-    assert tasks[0].metadata["pass_to_pass"] == "['t2']"
+    assert tasks[0].metadata["fail_to_pass"] == "['t1']"  # noqa: S105
+    assert tasks[0].metadata["pass_to_pass"] == "['t2']"  # noqa: S105
 
 
 def test_patch_extraction_and_files():
-    text = '```diff\ndiff --git a/x.py b/x.py\n- a\n+ b\n```'
+    text = "```diff\ndiff --git a/x.py b/x.py\n- a\n+ b\n```"
     patch = extract_patch(text)
     assert "diff --git" in patch
     assert touched_files(patch) == {"x.py"}
     assert extract_patch("no patch here") == ""
     # truncated output: unterminated fence still yields the patch
-    assert extract_patch("```diff\ndiff --git a/x.py b/x.py\n- a") == \
-        "diff --git a/x.py b/x.py\n- a"
+    assert (
+        extract_patch("```diff\ndiff --git a/x.py b/x.py\n- a")
+        == "diff --git a/x.py b/x.py\n- a"
+    )
     # non-diff fence without patch markers is not a patch
     assert extract_patch("```python\nprint(1)\n```") == ""
 
@@ -245,14 +307,15 @@ def test_bench_jobs_env(monkeypatch):
 
 def test_bench_jobs_rejects_zero(monkeypatch):
     import pytest
+
     monkeypatch.setenv("BENCH_JOBS", "0")
     with pytest.raises(ValueError, match="jobs must be >= 1"):
         BenchConfig.load()
 
 
 def test_resolve_jobs():
-    import argparse
     import pytest
+
     from benchharness.cli import build_parser, resolve_jobs
 
     args = build_parser().parse_args(["run", "--suite", "demo"])
@@ -262,13 +325,16 @@ def test_resolve_jobs():
     args = build_parser().parse_args(["run", "--suite", "demo", "--sequential"])
     assert resolve_jobs(args) == 1
     args = build_parser().parse_args(
-        ["run", "--suite", "demo", "--sequential", "--jobs", "2"])
+        ["run", "--suite", "demo", "--sequential", "--jobs", "2"]
+    )
     with pytest.raises(RuntimeError, match="either --sequential or --jobs"):
         resolve_jobs(args)
 
 
 def test_jobs_flag_rejects_zero():
     import pytest
+
     from benchharness.cli import build_parser
+
     with pytest.raises(SystemExit):
         build_parser().parse_args(["run", "--suite", "demo", "--jobs", "0"])

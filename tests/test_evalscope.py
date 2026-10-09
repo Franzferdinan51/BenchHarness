@@ -11,18 +11,27 @@ from benchharness.evalscope_driver import (
 
 
 def _claw_row(passed, task_score=1.0, err=""):
-    return {"value": {"task_score": task_score, "passed": passed,
-                      "error_rate": 0.0 if passed else 1.0,
-                      "judge_score": task_score},
-            "status": "ok",
-            "metadata": {"task_id": "T1", "error": err,
-                         "trace_path": "/tmp/tr.jsonl"}}
+    return {
+        "value": {
+            "task_score": task_score,
+            "passed": passed,
+            "error_rate": 0.0 if passed else 1.0,
+            "judge_score": task_score,
+        },
+        "status": "ok",
+        # fixture strings, never created on disk
+        "metadata": {
+            "task_id": "T1",
+            "error": err,
+            "trace_path": "/tmp/tr.jsonl",  # noqa: S108
+        },
+    }
 
 
 def test_parse_claw_pass_and_fail():
     oc = parse_samples("T1", [_claw_row(1.0)])
     assert oc.passed and oc.score == 1.0
-    assert oc.trace_path == "/tmp/tr.jsonl"
+    assert oc.trace_path == "/tmp/tr.jsonl"  # noqa: S108
     oc = parse_samples("T1", [_claw_row(0.0, 0.0, "boom")])
     assert not oc.passed and oc.score == 0.0 and "boom" in oc.details
 
@@ -41,8 +50,9 @@ def test_row_outcome_mcp_pass_shape():
     assert row_outcome({"coverage_score": 0.8, "pass": 1.0}) == (0.8, True)
     assert row_outcome({"coverage_score": 0.2, "pass": 0.0}) == (0.2, False)
     # parse_samples uses the same helper
-    oc = parse_samples("t", [{"value": {"coverage_score": 1.0, "pass": 1.0},
-                              "metadata": {}}])
+    oc = parse_samples(
+        "t", [{"value": {"coverage_score": 1.0, "pass": 1.0}, "metadata": {}}]
+    )
     assert oc.passed and oc.score == 1.0
 
 
@@ -51,8 +61,14 @@ def test_run_batch_parses_rows_and_limit(tmp_path, monkeypatch):
 
     import benchharness.evalscope_driver as driver
 
-    rows = [{"value": {"coverage_score": 0.5, "pass": 0.0},
-             "status": "success", "metadata": {}, "prompt": "do x"}]
+    rows = [
+        {
+            "value": {"coverage_score": 0.5, "pass": 0.0},
+            "status": "success",
+            "metadata": {},
+            "prompt": "do x",
+        }
+    ]
 
     class FakeProc:
         returncode = 0
@@ -67,8 +83,9 @@ def test_run_batch_parses_rows_and_limit(tmp_path, monkeypatch):
         return FakeProc()
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    got, error = driver.run_batch("mcp_atlas", model="m", api_base="u",
-                                  api_key="k", limit=7, work_dir=tmp_path)
+    got, error = driver.run_batch(
+        "mcp_atlas", model="m", api_base="u", api_key="k", limit=7, work_dir=tmp_path
+    )
     assert error == "" and got == rows
     assert seen["cmd"][-1] == "7" and seen["cmd"][-2] == "{}"
 
@@ -84,16 +101,18 @@ def test_run_batch_error_paths(tmp_path, monkeypatch):
         stderr = "bad"
 
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: FakeProc())
-    rows, error = driver.run_batch("mcp_atlas", model="m", api_base="u",
-                                   api_key="k", limit=1, work_dir=tmp_path)
+    rows, error = driver.run_batch(
+        "mcp_atlas", model="m", api_base="u", api_key="k", limit=1, work_dir=tmp_path
+    )
     assert rows == [] and "rc=2" in error
 
     def boom(*a, **k):
         raise subprocess.TimeoutExpired(cmd=[], timeout=1)
 
     monkeypatch.setattr(subprocess, "run", boom)
-    rows, error = driver.run_batch("mcp_atlas", model="m", api_base="u",
-                                   api_key="k", limit=1, work_dir=tmp_path)
+    rows, error = driver.run_batch(
+        "mcp_atlas", model="m", api_base="u", api_key="k", limit=1, work_dir=tmp_path
+    )
     assert rows == [] and "timeout" in error
 
 
@@ -104,11 +123,24 @@ def test_mcp_recall_fallback_without_service(tmp_path, monkeypatch):
 
     monkeypatch.setattr(agentic_mod, "_mcp_env_reachable", lambda *a, **k: False)
     adapter = agentic_mod.McpAtlasAdapter()
-    task = Task(task_id="t", prompt="p", reference="claims",
-                metadata={"raw_prompt": "p", "ds_index": 0})
-    assert adapter.run_external(
-        task, {"model": "m", "config": BenchConfig(model="m"),
-               "run_id": "r", "workdir": tmp_path}) is None
+    task = Task(
+        task_id="t",
+        prompt="p",
+        reference="claims",
+        metadata={"raw_prompt": "p", "ds_index": 0},
+    )
+    assert (
+        adapter.run_external(
+            task,
+            {
+                "model": "m",
+                "config": BenchConfig(model="m"),
+                "run_id": "r",
+                "workdir": tmp_path,
+            },
+        )
+        is None
+    )
     out = adapter.score("claims words here", task)
     assert "recall mode" in out.details
 
@@ -119,29 +151,53 @@ def test_mcp_agent_mode_cache_match_and_exclude(tmp_path, monkeypatch):
     from benchharness.config import BenchConfig
     from benchharness.suites.base import Task
 
-    monkeypatch.setattr(agentic_mod.McpAtlasAdapter, "_agent_mode",
-                        lambda self: True)
+    monkeypatch.setattr(agentic_mod.McpAtlasAdapter, "_agent_mode", lambda self: True)
     calls = []
 
     def fake_batch(benchmark, **kwargs):
         calls.append(kwargs["limit"])
         assert kwargs["extra_params"]["mcp_server_url"].endswith(":1984")
-        return ([{"value": {"coverage_score": 1.0, "pass": 1.0},
-                  "status": "success", "metadata": {}, "prompt": "p0"}]
-                if kwargs["limit"] == 1 else
-                [{"value": {"coverage_score": 1.0, "pass": 1.0},
-                  "status": "success", "metadata": {}, "prompt": "p0"},
-                 {"value": {"coverage_score": 0.0, "pass": 0.0},
-                  "status": "success", "metadata": {}, "prompt": "p1"}]), ""
+        return (
+            [
+                {
+                    "value": {"coverage_score": 1.0, "pass": 1.0},
+                    "status": "success",
+                    "metadata": {},
+                    "prompt": "p0",
+                }
+            ]
+            if kwargs["limit"] == 1
+            else [
+                {
+                    "value": {"coverage_score": 1.0, "pass": 1.0},
+                    "status": "success",
+                    "metadata": {},
+                    "prompt": "p0",
+                },
+                {
+                    "value": {"coverage_score": 0.0, "pass": 0.0},
+                    "status": "success",
+                    "metadata": {},
+                    "prompt": "p1",
+                },
+            ]
+        ), ""
 
     monkeypatch.setattr(driver, "run_batch", fake_batch)
     adapter = agentic_mod.McpAtlasAdapter()
-    ctx = {"model": "m", "config": BenchConfig(model="m"), "run_id": "r",
-           "workdir": tmp_path}
+    ctx = {
+        "model": "m",
+        "config": BenchConfig(model="m"),
+        "run_id": "r",
+        "workdir": tmp_path,
+    }
 
     def task(i):
-        return Task(task_id=f"t{i}", prompt=f"p{i} + tools",
-                    metadata={"raw_prompt": f"p{i}", "ds_index": i})
+        return Task(
+            task_id=f"t{i}",
+            prompt=f"p{i} + tools",
+            metadata={"raw_prompt": f"p{i}", "ds_index": i},
+        )
 
     _, s0 = adapter.run_external(task(0), ctx)
     assert s0.passed and s0.score == 1.0 and "agent mode" in s0.details
@@ -150,8 +206,9 @@ def test_mcp_agent_mode_cache_match_and_exclude(tmp_path, monkeypatch):
     assert s0b.passed and calls == [1]
     # excluded task (prompt missing from rows)
     _, sx = adapter.run_external(
-        Task(task_id="tx", prompt="px", metadata={"raw_prompt": "px",
-                                                  "ds_index": 0}), ctx)
+        Task(task_id="tx", prompt="px", metadata={"raw_prompt": "px", "ds_index": 0}),
+        ctx,
+    )
     assert not sx.passed and "excluded" in sx.details
     # growth: index beyond coverage reruns with bigger limit
     _, s1 = adapter.run_external(task(1), ctx)
@@ -159,13 +216,21 @@ def test_mcp_agent_mode_cache_match_and_exclude(tmp_path, monkeypatch):
 
 
 def test_parse_deep_swe_acc():
-    rows = [{"value": {"acc": 1.0}, "status": "ok",
-             "metadata": {"reward": 1.0, "pier_job_result_path": "/tmp/p.json"}}]
+    rows = [
+        {
+            "value": {"acc": 1.0},
+            "status": "ok",
+            # fixture strings, never created on disk
+            "metadata": {
+                "reward": 1.0,
+                "pier_job_result_path": "/tmp/p.json",  # noqa: S108
+            },
+        }
+    ]
     oc = parse_samples("t1", rows)
     assert oc.passed and oc.score == 1.0
-    assert oc.trace_path == "/tmp/p.json"
-    oc = parse_samples("t1", [{"value": {"acc": 0.0}, "status": "ok",
-                               "metadata": {}}])
+    assert oc.trace_path == "/tmp/p.json"  # noqa: S108
+    oc = parse_samples("t1", [{"value": {"acc": 0.0}, "status": "ok", "metadata": {}}])
     assert not oc.passed
 
 
@@ -176,8 +241,6 @@ def test_parse_empty_samples():
 
 def test_run_one_parses_samples_line(tmp_path, monkeypatch):
     import subprocess
-
-    import benchharness.evalscope_driver as driver
 
     samples = [_claw_row(1.0)]
     stdout = "noise\nBENCH_SAMPLES_JSON:" + json.dumps(samples) + "\n"
@@ -195,8 +258,16 @@ def test_run_one_parses_samples_line(tmp_path, monkeypatch):
         return FakeProc()
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    oc = run_one("claw_eval", "T1", model="m", api_base="http://x/v1",
-                 api_key="k", split="general", trials=1, work_dir=tmp_path)
+    oc = run_one(
+        "claw_eval",
+        "T1",
+        model="m",
+        api_base="http://x/v1",
+        api_key="k",
+        split="general",
+        trials=1,
+        work_dir=tmp_path,
+    )
     assert isinstance(oc, EvalScopeOutcome)
     assert oc.passed and oc.score == 1.0
     assert "claw_eval" in seen["cmd"] and "T1" in seen["cmd"]
@@ -213,8 +284,9 @@ def test_run_one_no_samples_reports_tail(tmp_path, monkeypatch):
         stderr = "kaboom"
 
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: FakeProc())
-    oc = run_one("deep_swe", "t1", model="m", api_base="u", api_key="k",
-                 work_dir=tmp_path)
+    oc = run_one(
+        "deep_swe", "t1", model="m", api_base="u", api_key="k", work_dir=tmp_path
+    )
     assert not oc.passed and oc.error == "no-result" and "kaboom" in oc.details
 
 
@@ -227,8 +299,15 @@ def test_run_one_timeout(tmp_path, monkeypatch):
         raise subprocess.TimeoutExpired(cmd=[], timeout=1)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    oc = run_one("claw_eval", "T1", model="m", api_base="u", api_key="k",
-                 work_dir=tmp_path, timeout_secs=1)
+    oc = run_one(
+        "claw_eval",
+        "T1",
+        model="m",
+        api_base="u",
+        api_key="k",
+        work_dir=tmp_path,
+        timeout_secs=1,
+    )
     assert not oc.passed and oc.error == "timeout"
 
 
@@ -249,8 +328,14 @@ def test_claweval_run_external_uses_driver(tmp_path, monkeypatch):
     adapter = get_suite("claweval")
     task = Task(task_id="T9", prompt="q", metadata={"split": "multi_turn"})
     out, score = adapter.run_external(
-        task, {"model": "m", "config": BenchConfig(model="m"),
-               "run_id": "r", "workdir": tmp_path})
+        task,
+        {
+            "model": "m",
+            "config": BenchConfig(model="m"),
+            "run_id": "r",
+            "workdir": tmp_path,
+        },
+    )
     assert score.passed and "trials=3" in out
 
 
@@ -264,8 +349,7 @@ def test_deepswe_tasks_from_snapshot_dir(tmp_path, monkeypatch):
     (good / "task.toml").write_text("[task]\n")
     (good / "instruction.md").write_text("Do the thing.")
     (tasks_dir / "notask").mkdir()
-    monkeypatch.setattr(coding_mod, "_load_deepswe_tasks_dir",
-                        lambda: tasks_dir)
+    monkeypatch.setattr(coding_mod, "_load_deepswe_tasks_dir", lambda: tasks_dir)
     tasks = get_suite("deepswe").tasks()
     assert [t.task_id for t in tasks] == ["t1"]
     assert tasks[0].prompt == "Do the thing."
@@ -279,15 +363,20 @@ def test_deepswe_run_external_uses_driver(tmp_path, monkeypatch):
 
     def fake_run_one(benchmark, task_id, **kwargs):
         assert benchmark == "deep_swe"
-        return EvalScopeOutcome(task_id, 0.0, False, "score=0.000 trials=1",
-                                error="")
+        return EvalScopeOutcome(task_id, 0.0, False, "score=0.000 trials=1", error="")
 
     monkeypatch.setattr(driver, "run_one", fake_run_one)
     adapter = get_suite("deepswe")
     task = Task(task_id="t1", prompt="p")
     _, score = adapter.run_external(
-        task, {"model": "m", "config": BenchConfig(model="m"),
-               "run_id": "r", "workdir": tmp_path})
+        task,
+        {
+            "model": "m",
+            "config": BenchConfig(model="m"),
+            "run_id": "r",
+            "workdir": tmp_path,
+        },
+    )
     assert not score.passed and score.score == 0.0
 
 
@@ -334,9 +423,15 @@ def test_run_one_forwards_extra_params(tmp_path, monkeypatch):
         return FakeProc()
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    oc = driver.run_one("toolathlon", "ab-testing", model="m", api_base="u",
-                        api_key="k", work_dir=tmp_path,
-                        extra_params={"task_list": ["ab-testing"]})
+    oc = driver.run_one(
+        "toolathlon",
+        "ab-testing",
+        model="m",
+        api_base="u",
+        api_key="k",
+        work_dir=tmp_path,
+        extra_params={"task_list": ["ab-testing"]},
+    )
     assert oc.passed
     assert json.loads(seen["cmd"][-1]) == {"task_list": ["ab-testing"]}
 
@@ -361,23 +456,32 @@ def test_toolathlon_tasks_and_run_external(tmp_path, monkeypatch):
     assert adapter.status == "wired"
     _, score = adapter.run_external(
         Task(task_id="t1", prompt="p"),
-        {"model": "m", "config": BenchConfig(model="m"),
-         "run_id": "r", "workdir": tmp_path})
+        {
+            "model": "m",
+            "config": BenchConfig(model="m"),
+            "run_id": "r",
+            "workdir": tmp_path,
+        },
+    )
     assert score.passed
 
 
 def test_container_base_url_rewrites_localhost(monkeypatch):
     from benchharness.evalscope_driver import container_base_url
 
-    assert container_base_url("http://127.0.0.1:1234/v1") == \
-        "http://host.docker.internal:1234/v1"
-    assert container_base_url("http://localhost:8080/x") == \
-        "http://host.docker.internal:8080/x"
-    assert container_base_url("https://api.example.com/v1") == \
-        "https://api.example.com/v1"
+    assert (
+        container_base_url("http://127.0.0.1:1234/v1")
+        == "http://host.docker.internal:1234/v1"
+    )
+    assert (
+        container_base_url("http://localhost:8080/x")
+        == "http://host.docker.internal:8080/x"
+    )
+    assert (
+        container_base_url("https://api.example.com/v1") == "https://api.example.com/v1"
+    )
     monkeypatch.setenv("BENCH_CONTAINER_HOST", "10.0.0.5")
-    assert container_base_url("http://127.0.0.1:1234/v1") == \
-        "http://10.0.0.5:1234/v1"
+    assert container_base_url("http://127.0.0.1:1234/v1") == "http://10.0.0.5:1234/v1"
 
 
 def test_run_one_deep_swe_prefix_and_env(tmp_path, monkeypatch):
@@ -399,20 +503,29 @@ def test_run_one_deep_swe_prefix_and_env(tmp_path, monkeypatch):
         return FakeProc()
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    oc = driver.run_one("deep_swe", "t1", model="mymodel",
-                        api_base="http://127.0.0.1:1234/v1", api_key="k",
-                        work_dir=tmp_path)
+    oc = driver.run_one(
+        "deep_swe",
+        "t1",
+        model="mymodel",
+        api_base="http://127.0.0.1:1234/v1",
+        api_key="k",
+        work_dir=tmp_path,
+    )
     assert oc.passed
     argv_model = seen["cmd"][seen["cmd"].index("deep_swe") + 3]
     assert argv_model == "openai/mymodel"
-    assert seen["env"]["OPENAI_API_BASE"] == \
-        "http://host.docker.internal:1234/v1"
+    assert seen["env"]["OPENAI_API_BASE"] == "http://host.docker.internal:1234/v1"
     assert seen["env"]["OPENAI_API_KEY"] == "k"
 
     # other benchmarks: no prefix, no env override
-    oc = driver.run_one("claw_eval", "T1", model="mymodel",
-                        api_base="http://127.0.0.1:1234/v1", api_key="k",
-                        work_dir=tmp_path)
+    oc = driver.run_one(
+        "claw_eval",
+        "T1",
+        model="mymodel",
+        api_base="http://127.0.0.1:1234/v1",
+        api_key="k",
+        work_dir=tmp_path,
+    )
     assert seen["env"] is None
 
 
@@ -428,9 +541,9 @@ def test_driver_wraps_deepswe_snapshot_download():
 
 
 def test_warn_if_outside_home(tmp_path, capsys):
-    from benchharness.evalscope_driver import warn_if_outside_home
-
     from pathlib import Path
+
+    from benchharness.evalscope_driver import warn_if_outside_home
 
     warn_if_outside_home(Path.home())
     assert "warning" not in capsys.readouterr().err

@@ -6,10 +6,14 @@ dependency is installed (else bundled smoke samples), deterministic scorers.
 
 from __future__ import annotations
 
+import logging
 import re
+from typing import ClassVar
 
 from benchharness.schema import Score
 from benchharness.suites.base import Requirement, SuiteAdapter, Task, strip_thinking
+
+logger = logging.getLogger(__name__)
 
 GPQA_SYSTEM = (
     "You are answering a multiple-choice science question. "
@@ -36,7 +40,8 @@ def _load_hf_dataset(name: str, config: str | None = None):
             if config:
                 return load_dataset(name, config, split=split)
             return load_dataset(name, split=split)
-        except Exception:
+        except Exception as exc:
+            logger.debug("split %s unavailable for %s: %s", split, name, exc)
             continue
     return None
 
@@ -65,33 +70,55 @@ class GpqaDiamondAdapter(SuiteAdapter):
     source = "Idavidrein/gpqa :: gpqa_diamond"
     status = "wired"
 
-    SMOKE = [
+    SMOKE: ClassVar[list] = [
         ("smoke-1", "What is 2+2? A) 3 B) 4 C) 5 D) 6", "B"),
-        ("smoke-2", "Which planet is known as the Red Planet? A) Venus B) Jupiter C) Mars D) Saturn", "C"),
+        (
+            "smoke-2",
+            (
+                "Which planet is known as the Red Planet? "
+                "A) Venus B) Jupiter C) Mars D) Saturn"
+            ),
+            "C",
+        ),
     ]
 
     def requirements(self):
-        return [Requirement("pip", "datasets", "HF dataset loader (else smoke samples)", soft=True)]
+        return [
+            Requirement(
+                "pip", "datasets", "HF dataset loader (else smoke samples)", soft=True
+            )
+        ]
 
     def tasks(self, limit=None):
         rows = _load_hf_dataset("Idavidrein/gpqa", "gpqa_diamond")
         out: list[Task] = []
         if rows is not None:
             for i, row in enumerate(rows):
-                choices = [row.get("Correct Answer", ""),
-                           row.get("Incorrect Answer 1", ""),
-                           row.get("Incorrect Answer 2", ""),
-                           row.get("Incorrect Answer 3", "")]
+                choices = [
+                    row.get("Correct Answer", ""),
+                    row.get("Incorrect Answer 1", ""),
+                    row.get("Incorrect Answer 2", ""),
+                    row.get("Incorrect Answer 3", ""),
+                ]
                 letters = "ABCD"
-                prompt = row.get("Question", "") + "\n" + "\n".join(
-                    f"{letters[j]}) {c}" for j, c in enumerate(choices)
+                prompt = (
+                    row.get("Question", "")
+                    + "\n"
+                    + "\n".join(f"{letters[j]}) {c}" for j, c in enumerate(choices))
                 )
-                out.append(Task(task_id=f"gpqa-{i}", prompt=prompt,
-                                reference="A", system=GPQA_SYSTEM))
+                out.append(
+                    Task(
+                        task_id=f"gpqa-{i}",
+                        prompt=prompt,
+                        reference="A",
+                        system=GPQA_SYSTEM,
+                    )
+                )
         else:
             for tid, prompt, ref in self.SMOKE:
-                out.append(Task(task_id=tid, prompt=prompt, reference=ref,
-                                system=GPQA_SYSTEM))
+                out.append(
+                    Task(task_id=tid, prompt=prompt, reference=ref, system=GPQA_SYSTEM)
+                )
         return out[:limit] if limit else out
 
     def score(self, output, task):
@@ -109,27 +136,36 @@ class HleAdapter(SuiteAdapter):
     source = "cais/hle"
     status = "wired"
 
-    SMOKE = [
+    SMOKE: ClassVar[list] = [
         ("smoke-1", "What is the capital of France?", "Paris"),
         ("smoke-2", "What is 7 * 8?", "56"),
     ]
 
     def requirements(self):
-        return [Requirement("pip", "datasets", "HF dataset loader (else smoke samples)", soft=True)]
+        return [
+            Requirement(
+                "pip", "datasets", "HF dataset loader (else smoke samples)", soft=True
+            )
+        ]
 
     def tasks(self, limit=None):
         rows = _load_hf_dataset("cais/hle")
         out: list[Task] = []
         if rows is not None:
             for row in rows:
-                out.append(Task(task_id=str(row.get("id", len(out))),
-                                prompt=str(row.get("question", "")),
-                                reference=str(row.get("answer", "")),
-                                system=HLE_SYSTEM))
+                out.append(
+                    Task(
+                        task_id=str(row.get("id", len(out))),
+                        prompt=str(row.get("question", "")),
+                        reference=str(row.get("answer", "")),
+                        system=HLE_SYSTEM,
+                    )
+                )
         else:
             for tid, prompt, ref in self.SMOKE:
-                out.append(Task(task_id=tid, prompt=prompt, reference=ref,
-                                system=HLE_SYSTEM))
+                out.append(
+                    Task(task_id=tid, prompt=prompt, reference=ref, system=HLE_SYSTEM)
+                )
         return out[:limit] if limit else out
 
     def score(self, output, task):
@@ -141,12 +177,16 @@ class HleAdapter(SuiteAdapter):
     def score_with_client(self, output, task, client, model):
         from benchharness.judge import judge_correct
 
-        verdict, _ = judge_correct(client, model, task.prompt, task.reference,
-                                   strip_thinking(output))
+        verdict, _ = judge_correct(
+            client, model, task.prompt, task.reference, strip_thinking(output)
+        )
         if verdict is None:
             return None
-        return Score(passed=verdict, score=1.0 if verdict else 0.0,
-                     details="canonical simple-evals grader")
+        return Score(
+            passed=verdict,
+            score=1.0 if verdict else 0.0,
+            details="canonical simple-evals grader",
+        )
 
 
 class HleToolsAdapter(HleAdapter):

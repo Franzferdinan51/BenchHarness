@@ -14,10 +14,12 @@ class DemoAdapter(SuiteAdapter):
 
     def tasks(self, limit=None):
         tasks = [
-            Task(task_id="echo-1", prompt='Reply with exactly: PINEAPPLE',
-                 reference="PINEAPPLE"),
-            Task(task_id="math-1", prompt='Reply with exactly: 42',
-                 reference="42"),
+            Task(
+                task_id="echo-1",
+                prompt="Reply with exactly: PINEAPPLE",
+                reference="PINEAPPLE",
+            ),
+            Task(task_id="math-1", prompt="Reply with exactly: 42", reference="42"),
         ]
         return tasks[:limit] if limit else tasks
 

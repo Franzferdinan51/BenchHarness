@@ -24,15 +24,34 @@ from benchharness.suites.coding import (
     TbTerminusAdapter,
 )
 from benchharness.suites.demo import DemoAdapter
-from benchharness.suites.reasoning import GpqaDiamondAdapter, HleAdapter, HleToolsAdapter
+from benchharness.suites.reasoning import (
+    GpqaDiamondAdapter,
+    HleAdapter,
+    HleToolsAdapter,
+)
 
 REGISTRY: dict[str, type[SuiteAdapter]] = {}
 for _cls in (
-    TbTerminusAdapter, TbClaudeAdapter, TbHermesAdapter, SweVerifiedAdapter,
-    SweProAdapter, SweMultilingualAdapter, DeepSweAdapter, FrontierBenchAdapter,
-    Nl2RepoAdapter, SweAtlasQnaAdapter, GpqaDiamondAdapter, HleAdapter,
-    HleToolsAdapter, McpAtlasAdapter, ToolathlonAdapter, WideSearchAdapter,
-    BrowseCompAdapter, ClawEvalAdapter, HermesBenchAdapter, DemoAdapter,
+    TbTerminusAdapter,
+    TbClaudeAdapter,
+    TbHermesAdapter,
+    SweVerifiedAdapter,
+    SweProAdapter,
+    SweMultilingualAdapter,
+    DeepSweAdapter,
+    FrontierBenchAdapter,
+    Nl2RepoAdapter,
+    SweAtlasQnaAdapter,
+    GpqaDiamondAdapter,
+    HleAdapter,
+    HleToolsAdapter,
+    McpAtlasAdapter,
+    ToolathlonAdapter,
+    WideSearchAdapter,
+    BrowseCompAdapter,
+    ClawEvalAdapter,
+    HermesBenchAdapter,
+    DemoAdapter,
 ):
     REGISTRY[_cls.name] = _cls
 

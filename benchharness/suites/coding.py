@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import ClassVar
 
 from benchharness.schema import Score
 from benchharness.suites.base import Requirement, SuiteAdapter, Task, strip_thinking
@@ -40,7 +41,9 @@ def extract_patch(text: str) -> str:
 
 
 def touched_files(patch: str) -> set[str]:
-    return set(re.findall(r"^(?:diff --git a/|--- a/|\+\+\+ b/)(\S+)", patch, re.MULTILINE))
+    return set(
+        re.findall(r"^(?:diff --git a/|--- a/|\+\+\+ b/)(\S+)", patch, re.MULTILINE)
+    )
 
 
 class _SweBase(SuiteAdapter):
@@ -55,26 +58,38 @@ class _SweBase(SuiteAdapter):
     # Datasets the installed swebench package can grade officially.
     # ScaleAI/SWE-bench_Pro uses a different image/eval layout; heuristic
     # grading until its driver is validated.
-    docker_datasets = frozenset({
-        "princeton-nlp/SWE-bench_Verified",
-        "SWE-bench/SWE-bench_Multilingual",
-    })
+    docker_datasets = frozenset(
+        {
+            "princeton-nlp/SWE-bench_Verified",
+            "SWE-bench/SWE-bench_Multilingual",
+        }
+    )
 
     def prepare(self, workdir: Path) -> None:
         self._workdir = workdir / "swe-reports"
         self._workdir.mkdir(parents=True, exist_ok=True)
 
-    SMOKE = [
-        ("smoke-1",
-         "Repo: demo/pkg. Issue: `add(a, b)` returns a-b instead of a+b.",
-         "diff --git a/demo/pkg.py b/demo/pkg.py\n- return a-b\n+ return a+b"),
+    SMOKE: ClassVar[list] = [
+        (
+            "smoke-1",
+            "Repo: demo/pkg. Issue: `add(a, b)` returns a-b instead of a+b.",
+            "diff --git a/demo/pkg.py b/demo/pkg.py\n- return a-b\n+ return a+b",
+        ),
     ]
 
     def requirements(self):
-        return [Requirement("pip", "datasets", "HF dataset loader (else smoke samples)", soft=True)]
+        return [
+            Requirement(
+                "pip", "datasets", "HF dataset loader (else smoke samples)", soft=True
+            )
+        ]
 
     def tasks(self, limit=None):
-        rows = _load_hf_dataset(self.dataset, self.dataset_config) if self.dataset else None
+        rows = (
+            _load_hf_dataset(self.dataset, self.dataset_config)
+            if self.dataset
+            else None
+        )
         out: list[Task] = []
         if rows is not None:
             for row in rows:
@@ -87,20 +102,25 @@ class _SweBase(SuiteAdapter):
                 prompt += "\n\nProvide the fix as a unified diff patch."
                 f2p = row.get("FAIL_TO_PASS", row.get("fail_to_pass", ""))
                 p2p = row.get("PASS_TO_PASS", row.get("pass_to_pass", ""))
-                out.append(Task(
-                    task_id=str(row.get("instance_id", len(out))),
-                    prompt=prompt,
-                    reference=str(row.get("patch", "")),
-                    metadata={"repo": repo,
-                              "base_commit": row.get("base_commit", ""),
-                              "fail_to_pass": str(f2p),
-                              "pass_to_pass": str(p2p)},
-                    system=SWE_SYSTEM,
-                ))
+                out.append(
+                    Task(
+                        task_id=str(row.get("instance_id", len(out))),
+                        prompt=prompt,
+                        reference=str(row.get("patch", "")),
+                        metadata={
+                            "repo": repo,
+                            "base_commit": row.get("base_commit", ""),
+                            "fail_to_pass": str(f2p),
+                            "pass_to_pass": str(p2p),
+                        },
+                        system=SWE_SYSTEM,
+                    )
+                )
         else:
             for tid, prompt, ref in self.SMOKE:
-                out.append(Task(task_id=tid, prompt=prompt, reference=ref,
-                                system=SWE_SYSTEM))
+                out.append(
+                    Task(task_id=tid, prompt=prompt, reference=ref, system=SWE_SYSTEM)
+                )
         return out[:limit] if limit else out
 
     def score(self, output, task):
@@ -117,7 +137,10 @@ class _SweBase(SuiteAdapter):
         if self.dataset not in self.docker_datasets:
             return None
         try:
-            from benchharness.swe_eval import docker_grading_available, grade_with_docker
+            from benchharness.swe_eval import (
+                docker_grading_available,
+                grade_with_docker,
+            )
         except Exception:
             return None
         if not docker_grading_available():
@@ -131,27 +154,37 @@ class _SweBase(SuiteAdapter):
             grade = grade_with_docker(self.dataset, task.task_id, patch, workdir)
         except Exception as exc:
             return self._heuristic_score(
-                task, patch, prefix=f"docker eval crashed ({exc}); heuristic: ")
+                task, patch, prefix=f"docker eval crashed ({exc}); heuristic: "
+            )
         if "crashed" in grade.details or "unreadable" in grade.details:
             return self._heuristic_score(
-                task, patch, prefix=f"{grade.details}; heuristic: ")
-        return Score(passed=grade.resolved, score=1.0 if grade.resolved else 0.0,
-                     details=grade.details)
+                task, patch, prefix=f"{grade.details}; heuristic: "
+            )
+        return Score(
+            passed=grade.resolved,
+            score=1.0 if grade.resolved else 0.0,
+            details=grade.details,
+        )
 
     def _heuristic_score(self, task: Task, patch: str, prefix: str = "") -> Score:
         if task.reference and patch.strip() == task.reference.strip():
-            return Score(passed=True, score=1.0,
-                         details=prefix + "exact patch match")
+            return Score(passed=True, score=1.0, details=prefix + "exact patch match")
         ref_files = touched_files(task.reference)
         got_files = touched_files(patch)
         if ref_files and got_files & ref_files:
             overlap = len(got_files & ref_files) / len(ref_files)
-            return Score(passed=False, score=0.5 * overlap,
-                         details=prefix + f"partial: touches "
-                                 f"{sorted(got_files & ref_files)} "
-                                 "(heuristic; docker eval unavailable)")
-        return Score(passed=False, score=0.1 if len(patch) > 20 else 0.0,
-                     details=prefix + "patch extracted but touches no gold files")
+            return Score(
+                passed=False,
+                score=0.5 * overlap,
+                details=prefix + f"partial: touches "
+                f"{sorted(got_files & ref_files)} "
+                "(heuristic; docker eval unavailable)",
+            )
+        return Score(
+            passed=False,
+            score=0.1 if len(patch) > 20 else 0.0,
+            details=prefix + "patch extracted but touches no gold files",
+        )
 
 
 class SweVerifiedAdapter(_SweBase):
@@ -205,19 +238,27 @@ class SweProAdapter(SuiteAdapter):
 
         require_docker_daemon()
         repo = self._repo_dir()
-        if (self._tasks_dir() / "hard51_ids.txt").is_file() or self._tasks_dir().is_dir():
-            if any(self._tasks_dir().iterdir()):
-                return
+        tasks_dir = self._tasks_dir()
+        if ((tasks_dir / "hard51_ids.txt").is_file() or tasks_dir.is_dir()) and any(
+            tasks_dir.iterdir()
+        ):
+            return
         repo.parent.mkdir(parents=True, exist_ok=True)
         if repo.is_dir():
-            fetched = run_local(["git", "-C", str(repo), "fetch", "--depth", "1",
-                                 "origin", "main"], timeout_secs=300.0)
+            fetched = run_local(
+                ["git", "-C", str(repo), "fetch", "--depth", "1", "origin", "main"],
+                timeout_secs=300.0,
+            )
             if fetched.exit_code == 0:
-                run_local(["git", "-C", str(repo), "reset", "--hard", "origin/main"],
-                          timeout_secs=120.0)
+                run_local(
+                    ["git", "-C", str(repo), "reset", "--hard", "origin/main"],
+                    timeout_secs=120.0,
+                )
         else:
-            proc = run_local(["git", "clone", "--depth", "1", self.repo_url, str(repo)],
-                             timeout_secs=600.0)
+            proc = run_local(
+                ["git", "clone", "--depth", "1", self.repo_url, str(repo)],
+                timeout_secs=600.0,
+            )
             if proc.exit_code != 0:
                 raise RuntimeError(f"clone failed: {proc.stderr[-400:]}")
         if not self._tasks_dir().is_dir():
@@ -227,8 +268,15 @@ class SweProAdapter(SuiteAdapter):
         from benchharness.harbor_driver import list_tasks
 
         names = list_tasks(self._tasks_dir())
-        out = [Task(task_id=n, prompt=f"SWE-bench Pro task: {n}", reference="",
-                    metadata={"harbor_task": n}) for n in names]
+        out = [
+            Task(
+                task_id=n,
+                prompt=f"SWE-bench Pro task: {n}",
+                reference="",
+                metadata={"harbor_task": n},
+            )
+            for n in names
+        ]
         return out[:limit] if limit else out
 
     def score(self, output, task):
@@ -265,28 +313,41 @@ class SweProAdapter(SuiteAdapter):
 
         task_dir = task.metadata.get("harbor_task", task.task_id)
         from benchharness.harbor_driver import ensure_image, task_image
+
         image = task_image(self._tasks_dir() / task_dir)
         if image:
             ensure_image(image)
         cmd = build_run_command(
-            "swe-bench-pro-v2", agent, harbor_model, jobs_dir, job_name,
+            "swe-bench-pro-v2",
+            agent,
+            harbor_model,
+            jobs_dir,
+            job_name,
             include_task=task_dir,  # local -p datasets match bare dir names
-            n_tasks=1, agent_kwargs=agent_kwargs, agent_env=agent_env,
-            memory_policy=memory, dataset_path=self._tasks_dir(),
+            n_tasks=1,
+            agent_kwargs=agent_kwargs,
+            agent_env=agent_env,
+            memory_policy=memory,
+            dataset_path=self._tasks_dir(),
         )
         # In-process agents (terminus-2 via litellm) read the subprocess
         # env, not the container env: merge agent_env into the child.
         returncode, tail = run_job(cmd, timeout, {**_os.environ, **agent_env})
         outcomes = parse_job_dir(jobs_dir / job_name)
         if not outcomes:
-            return tail, Score(passed=False, score=0.0,
-                               details=f"no trial results (rc={returncode})")
+            return tail, Score(
+                passed=False, score=0.0, details=f"no trial results (rc={returncode})"
+            )
         oc = outcomes[0]
         if oc.error:
-            return tail, Score(passed=False, score=0.0,
-                               details=f"trial error: {oc.error}")
-        return tail, Score(passed=oc.passed, score=oc.score,
-                           details=f"rewards={oc.rewards} ({oc.seconds:.0f}s)")
+            return tail, Score(
+                passed=False, score=0.0, details=f"trial error: {oc.error}"
+            )
+        return tail, Score(
+            passed=oc.passed,
+            score=oc.score,
+            details=f"rewards={oc.rewards} ({oc.seconds:.0f}s)",
+        )
 
 
 class SweMultilingualAdapter(_SweBase):
@@ -327,26 +388,46 @@ class DeepSweAdapter(SuiteAdapter):
     def requirements(self):
         return [
             Requirement("pip", "modelscope", "ModelScope snapshot", soft=True),
-            Requirement("evalscope", "deep_swe",
-                        "isolated EvalScope venv with Pier (deep_swe extra)"),
+            Requirement(
+                "evalscope",
+                "deep_swe",
+                "isolated EvalScope venv with Pier (deep_swe extra)",
+            ),
             Requirement("cli", "docker", "Pier task envs"),
         ]
 
     def tasks(self, limit=None):
         tasks_dir = _load_deepswe_tasks_dir()
         if tasks_dir is None:
-            return [Task(task_id="missing-data", prompt="", reference="",
-                         metadata={"skip_reason": "evalscope/deep-swe snapshot "
-                                   "unavailable; pip install modelscope + network"})]
+            return [
+                Task(
+                    task_id="missing-data",
+                    prompt="",
+                    reference="",
+                    metadata={
+                        "skip_reason": "evalscope/deep-swe snapshot "
+                        "unavailable; pip install modelscope + network"
+                    },
+                )
+            ]
         out = []
         for child in sorted(tasks_dir.iterdir()):
             if not (child.is_dir() and (child / "task.toml").is_file()):
                 continue
             instruction = child / "instruction.md"
-            prompt = (instruction.read_text(encoding="utf-8")[:4000]
-                      if instruction.is_file() else f"DeepSWE task: {child.name}")
-            out.append(Task(task_id=child.name, prompt=prompt, reference="",
-                            metadata={"tasks_dir": str(tasks_dir)}))
+            prompt = (
+                instruction.read_text(encoding="utf-8")[:4000]
+                if instruction.is_file()
+                else f"DeepSWE task: {child.name}"
+            )
+            out.append(
+                Task(
+                    task_id=child.name,
+                    prompt=prompt,
+                    reference="",
+                    metadata={"tasks_dir": str(tasks_dir)},
+                )
+            )
         return out[:limit] if limit else out
 
     def score(self, output, task):
@@ -362,15 +443,20 @@ class DeepSweAdapter(SuiteAdapter):
         trials = int(_os.environ.get("BENCH_DEEPSWE_TRIALS", "1"))
         timeout = float(getattr(config, "evalscope_timeout_secs", 5400.0))
         oc = run_one(
-            "deep_swe", task.task_id, model=model,
+            "deep_swe",
+            task.task_id,
+            model=model,
             api_base=getattr(config, "base_url", "http://127.0.0.1:1234/v1"),
             api_key=getattr(config, "api_key", "lm-studio"),
-            trials=trials, workdir=ctx["workdir"], timeout_secs=timeout,
+            trials=trials,
+            workdir=ctx["workdir"],
+            timeout_secs=timeout,
         )
         output = f"deep_swe trials={trials} trace={oc.trace_path}"
         if oc.error:
-            return output, Score(passed=False, score=0.0,
-                                 details=f"{oc.details} [{oc.error}]")
+            return output, Score(
+                passed=False, score=0.0, details=f"{oc.details} [{oc.error}]"
+            )
         return output, Score(passed=oc.passed, score=oc.score, details=oc.details)
 
 
@@ -389,9 +475,17 @@ class FrontierBenchAdapter(SuiteAdapter):
     status = "scaffold"
 
     def tasks(self, limit=None):
-        return [Task(task_id="no-public-source", prompt="", reference="",
-                     metadata={"skip_reason": "no public Frontier-Bench "
-                               "dataset/harness found; rerun research"})]
+        return [
+            Task(
+                task_id="no-public-source",
+                prompt="",
+                reference="",
+                metadata={
+                    "skip_reason": "no public Frontier-Bench "
+                    "dataset/harness found; rerun research"
+                },
+            )
+        ]
 
     def score(self, output, task):
         return Score(passed=False, details="scaffold: no public source")
@@ -427,17 +521,30 @@ class Nl2RepoAdapter(SuiteAdapter):
     def tasks(self, limit=None):
         rows = _load_hf_dataset("AweAI-Team/AweAgent-Meta-NL2Repo")
         if rows is None:
-            return [Task(task_id="missing-data", prompt="", reference="",
-                         metadata={"skip_reason": "NL2Repo dataset offline; "
-                                   "install datasets + network"})]
-        out = [Task(
-            task_id=str(r.get("instance_id", i)),
-            prompt=str(r.get("start_instruction", "")),
-            reference="",
-            metadata={"package": r.get("package_name", ""),
-                      "verify_cmd": str(r.get("verify_cmd", "")),
-                      "image": r.get("evaluation_image", "")},
-        ) for i, r in enumerate(rows)]
+            return [
+                Task(
+                    task_id="missing-data",
+                    prompt="",
+                    reference="",
+                    metadata={
+                        "skip_reason": "NL2Repo dataset offline; "
+                        "install datasets + network"
+                    },
+                )
+            ]
+        out = [
+            Task(
+                task_id=str(r.get("instance_id", i)),
+                prompt=str(r.get("start_instruction", "")),
+                reference="",
+                metadata={
+                    "package": r.get("package_name", ""),
+                    "verify_cmd": str(r.get("verify_cmd", "")),
+                    "image": r.get("evaluation_image", ""),
+                },
+            )
+            for i, r in enumerate(rows)
+        ]
         return out[:limit] if limit else out
 
     def score(self, output, task):
@@ -454,29 +561,60 @@ class Nl2RepoAdapter(SuiteAdapter):
         client = ctx.get("client")
         model = str(ctx.get("model", ""))
         transcript, shell = docker_shell_loop(
-            client, model, image, task.prompt,
-            max_turns=self.agent_turns, max_tokens=self.max_tokens,
+            client,
+            model,
+            image,
+            task.prompt,
+            max_turns=self.agent_turns,
+            max_tokens=self.max_tokens,
         )
         try:
             verify = shell.exec(verify_cmd, timeout_secs=600.0) if verify_cmd else None
         finally:
             shell.stop()
         if verify is None:
-            return "", Score(passed=False, details="no verify_cmd; agent ran "
-                             f"{transcript.turns} turns")
+            return "", Score(
+                passed=False,
+                details=f"no verify_cmd; agent ran {transcript.turns} turns",
+            )
         ok = verify.exit_code == 0
         tail = (verify.stdout + "\n" + verify.stderr)[-600:]
         return tail, Score(
-            passed=ok, score=1.0 if ok else 0.0,
+            passed=ok,
+            score=1.0 if ok else 0.0,
             details=f"verify exit={verify.exit_code} after {transcript.turns} "
-                    f"turns{f' (capped)' if transcript.capped else ''}")
+            f"turns{' (capped)' if transcript.capped else ''}",
+        )
 
 
 def _keywords(text: str) -> set[str]:
     words = re.findall(r"[a-z0-9_]{4,}", text.lower())
-    stop = {"that", "this", "with", "from", "have", "will", "about", "into",
-            "your", "what", "when", "where", "which", "their", "there", "code",
-            "file", "files", "function", "using", "used", "such", "than", "then"}
+    stop = {
+        "that",
+        "this",
+        "with",
+        "from",
+        "have",
+        "will",
+        "about",
+        "into",
+        "your",
+        "what",
+        "when",
+        "where",
+        "which",
+        "their",
+        "there",
+        "code",
+        "file",
+        "files",
+        "function",
+        "using",
+        "used",
+        "such",
+        "than",
+        "then",
+    }
     return {w for w in words if w not in stop}
 
 
@@ -494,11 +632,17 @@ class SweAtlasQnaAdapter(SuiteAdapter):
     status = "wired"
     max_tokens = 4096
 
-    SMOKE = [("smoke-1",
-              "Repo utils (python): where is the retry helper defined and what "
-              "does it do?",
-              "lib/retry.py defines retry() with backoff",
-              "retry backoff lib")]
+    SMOKE: ClassVar[list] = [
+        (
+            "smoke-1",
+            (
+                "Repo utils (python): where is the retry helper defined and what "
+                "does it do?"
+            ),
+            "lib/retry.py defines retry() with backoff",
+            "retry backoff lib",
+        )
+    ]
 
     def requirements(self):
         return [Requirement("pip", "datasets", "HF loader (else smoke)", soft=True)]
@@ -508,20 +652,30 @@ class SweAtlasQnaAdapter(SuiteAdapter):
         out: list[Task] = []
         if rows is not None:
             for r in rows:
-                out.append(Task(
-                    task_id=str(r.get("task_id", len(out))),
-                    prompt=f"Repository: {r.get('repository_url', '')} "
-                           f"@{r.get('repository_base_commit', '')} "
-                           f"({r.get('language', '')})\n\n"
-                           f"{r.get('prompt', '')}",
-                    reference=str(r.get("reference_answer", "")),
-                    metadata={"rubric": str(r.get("rubric", "")),
-                              "category": str(r.get("category", ""))},
-                ))
+                out.append(
+                    Task(
+                        task_id=str(r.get("task_id", len(out))),
+                        prompt=f"Repository: {r.get('repository_url', '')} "
+                        f"@{r.get('repository_base_commit', '')} "
+                        f"({r.get('language', '')})\n\n"
+                        f"{r.get('prompt', '')}",
+                        reference=str(r.get("reference_answer", "")),
+                        metadata={
+                            "rubric": str(r.get("rubric", "")),
+                            "category": str(r.get("category", "")),
+                        },
+                    )
+                )
         else:
             for tid, prompt, ref, rubric in self.SMOKE:
-                out.append(Task(task_id=tid, prompt=prompt, reference=ref,
-                                metadata={"rubric": rubric}))
+                out.append(
+                    Task(
+                        task_id=tid,
+                        prompt=prompt,
+                        reference=ref,
+                        metadata={"rubric": rubric},
+                    )
+                )
         return out[:limit] if limit else out
 
     def score(self, output, task):
@@ -531,21 +685,26 @@ class SweAtlasQnaAdapter(SuiteAdapter):
             return Score(passed=False, details="no rubric keywords")
         hits = {k for k in rubric_keys if k in answer.lower()}
         recall = len(hits) / len(rubric_keys)
-        return Score(passed=recall >= 0.6, score=recall,
-                     details=f"rubric_recall={len(hits)}/{len(rubric_keys)} "
-                             "(BENCH_JUDGE=1 for LLM rubric judge)")
+        return Score(
+            passed=recall >= 0.6,
+            score=recall,
+            details=f"rubric_recall={len(hits)}/{len(rubric_keys)} "
+            "(BENCH_JUDGE=1 for LLM rubric judge)",
+        )
 
     def score_with_client(self, output, task, client, model):
         from benchharness.judge import judge_correct
 
         rubric = task.metadata.get("rubric", "")
         gold = task.reference + (f"\nRubric: {rubric}" if rubric else "")
-        verdict, _ = judge_correct(client, model, task.prompt, gold,
-                                   strip_thinking(output))
+        verdict, _ = judge_correct(
+            client, model, task.prompt, gold, strip_thinking(output)
+        )
         if verdict is None:
             return None
-        return Score(passed=verdict, score=1.0 if verdict else 0.0,
-                     details="LLM rubric judge")
+        return Score(
+            passed=verdict, score=1.0 if verdict else 0.0, details="LLM rubric judge"
+        )
 
 
 class _TerminalBenchBase(SuiteAdapter):
@@ -568,8 +727,9 @@ class _TerminalBenchBase(SuiteAdapter):
             Requirement("cli", "docker", "task containers + oracle"),
         ]
         if self.harbor_agent == "claude-code":
-            reqs.append(Requirement("env", "ANTHROPIC_API_KEY",
-                                    "Claude Code CLI credential"))
+            reqs.append(
+                Requirement("env", "ANTHROPIC_API_KEY", "Claude Code CLI credential")
+            )
         if self.harbor_agent == "hermes":
             reqs.append(Requirement("cli", "hermes", "Hermes Agent CLI"))
         return reqs
@@ -595,9 +755,15 @@ class _TerminalBenchBase(SuiteAdapter):
         )
 
         names = list_tasks(default_cache_dir() / dataset_dir_name(self._dataset()))
-        out = [Task(task_id=n, prompt=f"Terminal-Bench task: {n}", reference="",
-                    metadata={"harbor_task": n, "harbor_dataset": self._dataset()})
-               for n in names]
+        out = [
+            Task(
+                task_id=n,
+                prompt=f"Terminal-Bench task: {n}",
+                reference="",
+                metadata={"harbor_task": n, "harbor_dataset": self._dataset()},
+            )
+            for n in names
+        ]
         return out[:limit] if limit else out
 
     def score(self, output, task):
@@ -625,9 +791,11 @@ class _TerminalBenchBase(SuiteAdapter):
         try:
             jobs_dir.resolve().relative_to(Path.home().resolve())
         except ValueError:
-            print("warning: harbor jobs outside $HOME are invisible to Colima "
-                  "bind mounts; rewards will not download. Keep --out under $HOME.",
-                  file=_sys.stderr)
+            print(
+                "warning: harbor jobs outside $HOME are invisible to Colima "
+                "bind mounts; rewards will not download. Keep --out under $HOME.",
+                file=_sys.stderr,
+            )
         job_name = f"{self.name}-{task.task_id}".replace("/", "_")[:80]
 
         # BENCH_HARBOR_AGENT=oracle runs golden solutions (LM-free smoke test).
@@ -653,10 +821,15 @@ class _TerminalBenchBase(SuiteAdapter):
         else:
             include = bare
         cmd = build_run_command(
-            dataset, agent, harbor_model, jobs_dir, job_name,
+            dataset,
+            agent,
+            harbor_model,
+            jobs_dir,
+            job_name,
             include_task=include,
             n_tasks=1,
-            agent_kwargs=agent_kwargs, agent_env=agent_env,
+            agent_kwargs=agent_kwargs,
+            agent_env=agent_env,
             memory_policy=memory,
         )
         # In-process agents (terminus-2 via litellm) read the subprocess
@@ -664,14 +837,19 @@ class _TerminalBenchBase(SuiteAdapter):
         returncode, tail = run_job(cmd, timeout, {**_os.environ, **agent_env})
         outcomes = parse_job_dir(jobs_dir / job_name)
         if not outcomes:
-            return tail, Score(passed=False, score=0.0,
-                               details=f"no trial results (rc={returncode})")
+            return tail, Score(
+                passed=False, score=0.0, details=f"no trial results (rc={returncode})"
+            )
         oc = outcomes[0]
         if oc.error:
-            return tail, Score(passed=False, score=0.0,
-                               details=f"trial error: {oc.error}")
-        return tail, Score(passed=oc.passed, score=oc.score,
-                           details=f"rewards={oc.rewards} ({oc.seconds:.0f}s)")
+            return tail, Score(
+                passed=False, score=0.0, details=f"trial error: {oc.error}"
+            )
+        return tail, Score(
+            passed=oc.passed,
+            score=oc.score,
+            details=f"rewards={oc.rewards} ({oc.seconds:.0f}s)",
+        )
 
 
 class TbTerminusAdapter(_TerminalBenchBase):
