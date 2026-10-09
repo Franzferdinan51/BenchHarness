@@ -208,6 +208,7 @@ def test_hf_loader_split_fallback(monkeypatch):
 
 
 def test_swe_pro_lowercase_keys_mapped(monkeypatch):
+    # Multilingual shares the _SweBase loader; Pro moved to Harbor tasks.
     import benchharness.suites.coding as coding_mod
     from benchharness.registry import get_suite
 
@@ -215,7 +216,7 @@ def test_swe_pro_lowercase_keys_mapped(monkeypatch):
              "patch": "p", "problem_statement": "ps", "hints_text": "",
              "fail_to_pass": ["t1"], "pass_to_pass": ["t2"]}]
     monkeypatch.setattr(coding_mod, "_load_hf_dataset", lambda *a, **k: rows)
-    tasks = get_suite("swe-pro").tasks()
+    tasks = get_suite("swe-multilingual").tasks()
     assert tasks[0].metadata["fail_to_pass"] == "['t1']"
     assert tasks[0].metadata["pass_to_pass"] == "['t2']"
 

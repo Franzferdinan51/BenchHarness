@@ -339,12 +339,12 @@ def test_swe_docker_env_kill_switch(monkeypatch):
     assert swe_eval.docker_grading_available() is False
 
 
-def test_swe_pro_stays_heuristic(tmp_path):
+def test_swe_pro_wired_via_harbor():
     from benchharness.registry import get_suite
-    from benchharness.suites.base import Task
+    from benchharness.suites.coding import SweProAdapter
+
     adapter = get_suite("swe-pro")
-    adapter.prepare(tmp_path)
-    ref = "diff --git a/x.py b/x.py\n- a\n+ b"
-    assert "ScaleAI" in adapter.source
-    assert adapter._docker_grade(Task(task_id="t", prompt="p", reference=ref),
-                                 ref) is None
+    assert isinstance(adapter, SweProAdapter)
+    assert adapter.status == "wired"
+    assert adapter.requirements()[0].name == "harbor"
+    assert "scaleapi" in adapter.source

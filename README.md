@@ -17,7 +17,7 @@ tools share one setup.
 | `tb-hermes` | coding | wired — TB 2.1 Harbor `--agent hermes` (Hermes-native model config) |
 | `hermes-bench` | agentic | scaffold — Nous HermesIndex suite is closed; `tb-hermes` is the proxy |
 | `swe-verified` | coding | wired — official docker FAIL_TO_PASS eval (gold-validated; heuristic fallback) |
-| `swe-pro` | coding | wired — `ScaleAI/SWE-bench_Pro` (lowercase fail/pass keys mapped) |
+| `swe-pro` | coding | wired — Pro V2 Harbor tasks (`harbor run -p v2/tasks`, oracle PASS live; amd64 pre-pull on ARM) |
 | `swe-multilingual` | coding | wired — official docker eval when available, else heuristic |
 | `deepswe` | coding | scaffold — `datacurve/deep-swe` is gated; Harbor verifiers in iteration 4 |
 | `frontier-bench` | coding | scaffold — Anthropic-reported, no public artifact (TB4 line tracked) |
@@ -102,11 +102,13 @@ the first loaded chat model. If your server needs auth, set `LM_STUDIO_API_KEY`.
 
 ```sh
 uv run bench-harness doctor                    # ping LM Studio, resolve model
-uv run bench-harness list-suites               # all 18 registered suites
+uv run bench-harness list-suites               # all 20 registered suites
 uv run bench-harness run --suite demo          # golden smoke run
 uv run bench-harness run --suite gpqa-diamond --limit 5
 uv run bench-harness run --suite swe-verified --suite hle --jobs 4
 uv run bench-harness run --suite all --limit 2 --out bench-results
+uv run bench-harness run --suite swe-pro --task openlibrary-00bec1e7   # one task by id substring
+BENCH_HARBOR_AGENT=oracle uv run bench-harness run --suite swe-pro --limit 1  # LM-free Harbor smoke
 uv run bench-harness inspect bench-results/<run-id>
 uv run bench-harness export bench-results/<run-id> --format json
 ```

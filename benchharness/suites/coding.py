@@ -161,11 +161,127 @@ class SweVerifiedAdapter(_SweBase):
     source = "princeton-nlp/SWE-bench_Verified"
 
 
-class SweProAdapter(_SweBase):
+class SweProAdapter(SuiteAdapter):
+    """SWE-bench Pro V2: 642 Harbor tasks (v2/tasks in scaleapi/SWE-bench_Pro-os).
+
+    Runs `harbor run -p v2/tasks` per task (default agent terminus-2 routed
+    to LM Studio; BENCH_HARBOR_AGENT=oracle for LM-free smoke). The full
+    locked protocol (offline agent + patch_replay re-grade) is future work;
+    single-trial rewards are reported.
+    """
+
     name = "swe-pro"
-    description = "SWE-bench Pro (ScaleAI/SWE-bench_Pro), long-horizon tasks"
-    dataset = "ScaleAI/SWE-bench_Pro"
-    source = "ScaleAI/SWE-bench_Pro"
+    category = "coding"
+    description = "SWE-bench Pro V2 (Harbor tasks, 642 instances)"
+    source = "github.com/scaleapi/SWE-bench_Pro-os v2/tasks + ScaleAI/SWE-bench_Pro"
+    status = "wired"
+    harbor_agent = "terminus-2"
+    repo_url = "https://github.com/scaleapi/SWE-bench_Pro-os"
+
+    def requirements(self):
+        return [
+            Requirement("cli", "harbor", "Harbor runner (uv tool install harbor)"),
+            Requirement("cli", "docker", "per-task images (ghcr.io/scaleapi)"),
+            Requirement("cli", "git", "clone the task repo"),
+        ]
+
+    def _repo_dir(self) -> Path:
+        import os as _os
+
+        override = _os.environ.get("BENCH_SWE_PRO_REPO", "").strip()
+        if override:
+            return Path(override)
+        from benchharness.harbor_driver import default_cache_dir
+
+        return default_cache_dir() / "swe-bench_Pro-os"
+
+    def _tasks_dir(self) -> Path:
+        return self._repo_dir() / "v2" / "tasks"
+
+    def prepare(self, workdir: Path) -> None:
+        from benchharness.sandbox import run_local
+
+        repo = self._repo_dir()
+        if (self._tasks_dir() / "hard51_ids.txt").is_file() or self._tasks_dir().is_dir():
+            if any(self._tasks_dir().iterdir()):
+                return
+        repo.parent.mkdir(parents=True, exist_ok=True)
+        if repo.is_dir():
+            fetched = run_local(["git", "-C", str(repo), "fetch", "--depth", "1",
+                                 "origin", "main"], timeout_secs=300.0)
+            if fetched.exit_code == 0:
+                run_local(["git", "-C", str(repo), "reset", "--hard", "origin/main"],
+                          timeout_secs=120.0)
+        else:
+            proc = run_local(["git", "clone", "--depth", "1", self.repo_url, str(repo)],
+                             timeout_secs=600.0)
+            if proc.exit_code != 0:
+                raise RuntimeError(f"clone failed: {proc.stderr[-400:]}")
+        if not self._tasks_dir().is_dir():
+            raise RuntimeError(f"v2/tasks missing after clone: {repo}")
+
+    def tasks(self, limit=None):
+        from benchharness.harbor_driver import list_tasks
+
+        names = list_tasks(self._tasks_dir())
+        out = [Task(task_id=n, prompt=f"SWE-bench Pro task: {n}", reference="",
+                    metadata={"harbor_task": n}) for n in names]
+        return out[:limit] if limit else out
+
+    def score(self, output, task):
+        return Score(passed=False, details="swe-pro Harbor trial (see run_external)")
+
+    def run_external(self, task, ctx):
+        import os as _os
+
+        from benchharness.harbor_driver import (
+            build_run_command,
+            parse_job_dir,
+            run_job,
+        )
+
+        config = ctx.get("config")
+        base_url = getattr(config, "base_url", "http://127.0.0.1:1234/v1")
+        timeout = float(getattr(config, "harbor_timeout_secs", 1800.0))
+        memory = getattr(config, "harbor_memory_policy", "ignore")
+        model = str(ctx.get("model", ""))
+        workdir: Path = ctx["workdir"]
+        jobs_dir = workdir / "harbor-jobs"
+        jobs_dir.mkdir(parents=True, exist_ok=True)
+        job_name = f"swe-pro-{task.task_id}".replace("/", "_")[:80]
+
+        agent = _os.environ.get("BENCH_HARBOR_AGENT", self.harbor_agent)
+        agent_kwargs: dict[str, str] = {}
+        agent_env: dict[str, str] = {}
+        harbor_model = model
+        if agent == "terminus-2":
+            agent_kwargs["api_base"] = base_url
+            if not model.startswith("openai/"):
+                harbor_model = f"openai/{model}"
+            agent_env["OPENAI_API_KEY"] = getattr(config, "api_key", "lm-studio")
+
+        task_dir = task.metadata.get("harbor_task", task.task_id)
+        from benchharness.harbor_driver import ensure_image, task_image
+        image = task_image(self._tasks_dir() / task_dir)
+        if image:
+            ensure_image(image)
+        cmd = build_run_command(
+            "swe-bench-pro-v2", agent, harbor_model, jobs_dir, job_name,
+            include_task=task_dir,  # local -p datasets match bare dir names
+            n_tasks=1, agent_kwargs=agent_kwargs, agent_env=agent_env,
+            memory_policy=memory, dataset_path=self._tasks_dir(),
+        )
+        returncode, tail = run_job(cmd, timeout)
+        outcomes = parse_job_dir(jobs_dir / job_name)
+        if not outcomes:
+            return tail, Score(passed=False, score=0.0,
+                               details=f"no trial results (rc={returncode})")
+        oc = outcomes[0]
+        if oc.error:
+            return tail, Score(passed=False, score=0.0,
+                               details=f"trial error: {oc.error}")
+        return tail, Score(passed=oc.passed, score=oc.score,
+                           details=f"rewards={oc.rewards} ({oc.seconds:.0f}s)")
 
 
 class SweMultilingualAdapter(_SweBase):

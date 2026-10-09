@@ -138,6 +138,104 @@ def test_dataset_dir_name_forms():
     assert dataset_dir_name("terminal-bench@2.0") == "terminal-bench"
 
 
+def test_build_run_command_local_path(tmp_path):
+    tasks = tmp_path / "v2" / "tasks"
+    tasks.mkdir(parents=True)
+    cmd = build_run_command("ignored", "oracle", "m", tmp_path, "j",
+                            include_task="abc", dataset_path=tasks)
+    assert "-p" in cmd and str(tasks) in cmd
+    assert "-d" not in cmd
+
+
+def test_swe_pro_local_tasks_and_oracle_cmd(tmp_path, monkeypatch):
+    from benchharness.config import BenchConfig
+    from benchharness.registry import get_suite
+
+    repo = tmp_path / "repo"
+    (repo / "v2" / "tasks" / "t1").mkdir(parents=True)
+    (repo / "v2" / "tasks" / "t1" / "task.toml").write_text("")
+    monkeypatch.setenv("BENCH_SWE_PRO_REPO", str(repo))
+    adapter = get_suite("swe-pro")
+    tasks = adapter.tasks()
+    assert [t.task_id for t in tasks] == ["t1"]
+
+    seen: dict = {}
+
+    def fake_run_job(cmd, timeout, env=None):
+        seen["cmd"] = cmd
+        return 0, "tail"
+
+    def fake_parse(job_dir):
+        from benchharness.harbor_driver import TrialOutcome
+        return [TrialOutcome(task_name="t1", passed=True, score=1.0)]
+
+    import benchharness.harbor_driver as driver
+    monkeypatch.setattr(driver, "run_job", fake_run_job)
+    monkeypatch.setattr(driver, "parse_job_dir", fake_parse)
+    monkeypatch.setenv("BENCH_HARBOR_AGENT", "oracle")
+    _, score = adapter.run_external(
+        tasks[0], {"model": "m", "config": BenchConfig(model="m"),
+                   "run_id": "r", "workdir": tmp_path})
+    assert score.passed
+    joined = " ".join(seen["cmd"])
+    assert "-p" in joined and "-a oracle" in joined
+
+
+def test_run_suites_task_filter(tmp_path, monkeypatch):
+    import benchharness.runner as runner_mod
+    from benchharness.config import BenchConfig
+    from benchharness.runner import run_suites
+    from benchharness.schema import TaskResult
+
+    seen: list[str] = []
+
+    def fake_evaluate(client, adapter, task, model, run_id, config, workdir):
+        seen.append(task.task_id)
+        return TaskResult(run_id=run_id, model=model, suite=adapter.name,
+                          task_id=task.task_id, passed=True, status="done")
+
+    monkeypatch.setattr(runner_mod, "evaluate_task", fake_evaluate)
+    cfg = BenchConfig(model="mock-model", out_dir=tmp_path)
+    _, summary = run_suites(["demo"], cfg, task_filter=["nomatch-xyz"])
+    assert summary.total == 0 and seen == []
+    _, summary2 = run_suites(["demo"], cfg, task_filter=["math"])
+    assert summary2.total == 1 and seen == ["math-1"]
+
+
+def test_task_image_reads_env_section(tmp_path):
+    from benchharness.harbor_driver import task_image
+
+    d = tmp_path / "t1"
+    d.mkdir()
+    (d / "task.toml").write_text(
+        '[task]\nname = "x"\n\n[environment]\ndocker_image = "ghcr.io/a/b:c"\n')
+    assert task_image(d) == "ghcr.io/a/b:c"
+    assert task_image(tmp_path / "missing") is None
+
+
+def test_ensure_image_cached_and_pull_paths(monkeypatch):
+    import benchharness.sandbox as sandbox_mod
+    from benchharness.harbor_driver import ensure_image
+    from collections import namedtuple
+
+    Proc = namedtuple("Proc", ["exit_code"])
+    calls: list[list[str]] = []
+    present = {"img:cached"}
+
+    def fake_run_local(cmd, timeout_secs=0.0, **kwargs):
+        calls.append(cmd)
+        if cmd[:3] == ["docker", "image", "inspect"]:
+            return Proc(0 if cmd[3] in present else 1)
+        present.add(cmd[-1])
+        return Proc(0)
+
+    monkeypatch.setattr(sandbox_mod, "run_local", fake_run_local)
+    assert ensure_image("img:cached") is True
+    assert len(calls) == 1  # no pull when cached
+    assert ensure_image("img:new") is True
+    assert any(c[:2] == ["docker", "pull"] and "--platform" in c for c in calls)
+
+
 def test_tb_default_dataset_is_21(monkeypatch):
     from benchharness.registry import get_suite
     monkeypatch.delenv("TB_DATASET", raising=False)

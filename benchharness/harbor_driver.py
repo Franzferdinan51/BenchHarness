@@ -90,11 +90,17 @@ def build_run_command(
     agent_env: dict[str, str] | None = None,
     timeout_multiplier: float = 1.0,
     memory_policy: str | None = None,
+    dataset_path: Path | None = None,
 ) -> list[str]:
-    cmd = ["harbor", "run", "-d", dataset, "-a", agent, "-m", model,
-           "-o", str(jobs_subdir), "--job-name", job_name,
-           "-n", str(n_concurrent), "-q",
-           "--timeout-multiplier", str(timeout_multiplier)]
+    cmd = ["harbor", "run"]
+    if dataset_path is not None:
+        cmd += ["-p", str(dataset_path)]
+    else:
+        cmd += ["-d", dataset]
+    cmd += ["-a", agent, "-m", model,
+            "-o", str(jobs_subdir), "--job-name", job_name,
+            "-n", str(n_concurrent), "-q",
+            "--timeout-multiplier", str(timeout_multiplier)]
     if memory_policy:
         cmd += ["--memory", memory_policy]
     if task:
@@ -216,3 +222,42 @@ def run_job(cmd: list[str], timeout_secs: float,
         return 124, (out.strip() + f"\n[timeout after {elapsed:.0f}s]").strip()
     except OSError as exc:
         return 127, str(exc)
+
+
+def ensure_image(image: str, timeout_secs: float = 900.0) -> bool:
+    """Pull a task image so single-arch registries resolve on any host.
+
+    Uses an explicit linux/amd64 pull (most eval images are amd64-only);
+    returns True when `docker image inspect` sees the image afterwards.
+    Never raises: callers fall through to harbor, which surfaces errors.
+    """
+    from benchharness.sandbox import run_local
+
+    try:
+        if run_local(["docker", "image", "inspect", image],
+                     timeout_secs=60.0).exit_code == 0:
+            return True
+        run_local(["docker", "pull", "--platform", "linux/amd64", image],
+                  timeout_secs=timeout_secs)
+        return run_local(["docker", "image", "inspect", image],
+                         timeout_secs=60.0).exit_code == 0
+    except Exception:
+        return False
+
+
+def task_image(task_dir: Path) -> str | None:
+    """Read [environment] docker_image from a Harbor task.toml, if present."""
+    toml_path = task_dir / "task.toml"
+    try:
+        text = toml_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    in_env = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_env = stripped == "[environment]"
+        elif in_env and stripped.startswith("docker_image"):
+            _, _, value = stripped.partition("=")
+            return value.strip().strip("\"'")
+    return None

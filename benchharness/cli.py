@@ -89,7 +89,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     run_dir, summary = run_suites(names, cfg, limit=args.limit,
                                   resume_from=Path(args.resume) if args.resume else None,
-                                  progress_cb=_progress)
+                                  progress_cb=_progress,
+                                  task_filter=args.task)
     console.print(f"\n[bold]run dir:[/bold] {run_dir}")
     console.print(f"total={summary.total} passed={summary.passed} "
                   f"errors={summary.errors} skipped={summary.skipped} "
@@ -150,6 +151,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="suite name or 'all' (repeatable)")
     r.add_argument("--model", default=None, help="override LM_STUDIO_MODEL")
     r.add_argument("--limit", type=int, default=None, help="max tasks per suite")
+    r.add_argument("--task", action="append", default=None,
+                   help="only run tasks whose id contains this (repeatable)")
     r.add_argument("--jobs", type=int, default=None, help="parallel workers")
     r.add_argument("--max-tokens", type=int, default=None,
                    help="override per-task completion cap (or BENCH_MAX_TOKENS)")

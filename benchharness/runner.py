@@ -147,6 +147,7 @@ def run_suites(
     limit: int | None = None,
     resume_from: Path | None = None,
     progress_cb=None,
+    task_filter: list[str] | None = None,
 ) -> tuple[Path, RunSummary]:
     """Run suites; returns (run_dir, summary). Streams results to JSONL."""
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:6]
@@ -184,6 +185,8 @@ def run_suites(
                 error=f"prepare/tasks failed: {type(exc).__name__}: {exc}"))
             continue
         for task in tasks:
+            if task_filter and not any(f in task.task_id for f in task_filter):
+                continue
             if (name, task.task_id) not in done:
                 work.append((adapter, task))
 
