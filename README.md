@@ -160,10 +160,23 @@ BENCH_HARBOR_AGENT=oracle uv run bench-harness run --suite swe-pro --limit 1  # 
 uv run bench-harness compare bench-results/<run-a> bench-results/<run-b>  # per-suite pass@1 + delta
 uv run bench-harness inspect bench-results/<run-id>
 uv run bench-harness export bench-results/<run-id> --format json
+uv run --extra tui bench-harness tui          # interactive TUI (Textual)
 ```
 
 Results stream to `<out>/<run-id>/results.jsonl` (crash-safe, resumable with
 `--resume`) plus an aggregate `summary.json` with pass@1 / mean scores.
+
+## TUI
+
+`bench-harness tui` (needs `pip install 'benchharness[tui]'`) opens a full
+interactive console: suite checklist, model picker (auto resolution names
+its source — `LM_STUDIO_MODEL`/`GROK_MODEL` env or first loaded — mirroring
+local-grok-cli), workers/limit/task-filter/out-dir config, sequential and
+judge toggles, live per-task log with a persistent `endpoint | model | done
+• tokens` status bar, cooperative Stop (unstarted tasks become
+`cancelled` skips), Doctor ping, and a past-runs browser with per-task
+result tables. Keys: `r` run, `s` stop, `d` doctor, `q` quit, `space`
+toggle, `enter` inspect a past run.
 
 ## Development
 

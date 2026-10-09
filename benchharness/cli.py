@@ -228,6 +228,17 @@ def cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tui(_args: argparse.Namespace) -> int:
+    try:
+        from benchharness.tui import main as tui_main
+    except ImportError:
+        console.print(
+            "[red]the TUI needs the 'tui' extra:[/red] pip install 'benchharness[tui]'"
+        )
+        return 1
+    return tui_main()
+
+
 def cmd_export(args: argparse.Namespace) -> int:
     run_dir = Path(args.run)
     results = read_results(run_dir / "results.jsonl")
@@ -321,6 +332,9 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("compare", help="compare two or more runs per suite")
     c.add_argument("runs", nargs="+", help="run directories")
     c.set_defaults(func=cmd_compare)
+
+    t = sub.add_parser("tui", help="interactive terminal UI")
+    t.set_defaults(func=cmd_tui)
     return p
 
 

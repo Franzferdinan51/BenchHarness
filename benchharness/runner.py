@@ -184,8 +184,14 @@ def run_suites(
     resume_from: Path | None = None,
     progress_cb=None,
     task_filter: list[str] | None = None,
+    stop_event=None,
 ) -> tuple[Path, RunSummary]:
-    """Run suites; returns (run_dir, summary). Streams results to JSONL."""
+    """Run suites; returns (run_dir, summary). Streams results to JSONL.
+
+    stop_event: optional threading.Event; when set, unstarted tasks are
+    recorded as cancelled-skipped and the run winds down (in-flight
+    tasks finish their current request).
+    """
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:6]
     run_dir = config.out_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -256,7 +262,7 @@ def run_suites(
             workdir = run_dir / "work" / adapter.name
             workdir.mkdir(parents=True, exist_ok=True)
             res = evaluate_task(client, adapter, task, model, run_id, config, workdir)
-            if progress_cb:
+            if progress_cb and not (stop_event is not None and stop_event.is_set()):
                 progress_cb(res)
             return res
 
@@ -283,8 +289,32 @@ def run_suites(
                 budgets[fut] = budget
                 deadlines[fut] = started_all + budget
             while pending:
+                if stop_event is not None and stop_event.is_set():
+                    for fut, (adapter, task) in list(pending.items()):
+                        fut.cancel()
+                        res = TaskResult(
+                            run_id=run_id,
+                            model=model,
+                            suite=adapter.name,
+                            task_id=task.task_id,
+                            passed=False,
+                            status="skipped",
+                            error="cancelled by user",
+                        )
+                        results.append(res)
+                        append_result(results_path, res)
+                    pending.clear()
+                    deadlines.clear()
+                    budgets.clear()
+                    break
                 now = time.monotonic()
-                wait_for = max(0.05, min(deadlines[f] for f in pending) - now)
+                wait_for = max(
+                    0.05,
+                    min(
+                        min(deadlines[f] for f in pending) - now,
+                        0.5 if stop_event is not None else 3600.0,
+                    ),
+                )
                 done, _ = wait(
                     list(pending), timeout=wait_for, return_when=FIRST_COMPLETED
                 )
@@ -314,9 +344,11 @@ def run_suites(
                         del deadlines[fut]
                         del budgets[fut]
         finally:
-            # On timeout, don't let straggler threads hold the run hostage;
-            # each is still bounded by the httpx request timeout + retries.
-            pool.shutdown(wait=not timed_out, cancel_futures=timed_out)
+            # On timeout/stop, don't let straggler threads hold the run
+            # hostage; each is still bounded by the httpx request timeout.
+            stopped = stop_event is not None and stop_event.is_set()
+            abrupt = timed_out or stopped
+            pool.shutdown(wait=not abrupt, cancel_futures=abrupt)
 
     summary = RunSummary.from_results(run_id, model, suite_names, started_at, results)
     summary.jobs = max(1, config.jobs)
