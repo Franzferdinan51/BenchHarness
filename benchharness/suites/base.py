@@ -45,7 +45,7 @@ class Task:
 
 @dataclass
 class Requirement:
-    kind: str  # "pip" | "cli" | "docker" | "env" | "note"
+    kind: str  # "pip" | "cli" | "docker" | "env" | "note" | "evalscope"
     name: str
     detail: str = ""
     soft: bool = False  # soft: degraded mode (e.g. smoke samples), don't skip
@@ -58,6 +58,9 @@ def _requirement_missing(req: Requirement) -> bool:
         return shutil.which(req.name) is None
     if req.kind == "env":
         return not _have_env(req.name)
+    if req.kind == "evalscope":
+        from benchharness.evalscope_driver import evalscope_python
+        return not evalscope_python().is_file()
     return False  # docker/note checked at execution time or informational
 
 

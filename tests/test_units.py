@@ -159,12 +159,14 @@ def test_claweval_enumerates_with_defer(monkeypatch):
     import benchharness.suites.agentic as agentic_mod
     from benchharness.registry import get_suite
 
-    rows = [{"task_id": "T001", "query": "triage email", "fixture": "f",
-             "language": "en", "category": "communication"}]
+    rows = [("general", {"task_id": "T001", "query": "triage email",
+                               "fixture": "f", "language": "en",
+                               "category": "communication"})]
     monkeypatch.setattr(agentic_mod, "_load_claweval_rows", lambda: rows)
     tasks = get_suite("claweval").tasks()
     assert len(tasks) == 1 and tasks[0].task_id == "T001"
-    assert "skip_reason" in tasks[0].metadata  # defers, no model burn
+    assert tasks[0].metadata["split"] == "general"
+    assert "skip_reason" not in tasks[0].metadata  # wired via EvalScope
 
     monkeypatch.setattr(agentic_mod, "_load_claweval_rows", lambda: None)
     tasks = get_suite("claweval").tasks()

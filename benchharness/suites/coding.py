@@ -291,41 +291,81 @@ class SweMultilingualAdapter(_SweBase):
     source = "SWE-bench/SWE-bench_Multilingual"
 
 
-class DeepSweAdapter(SuiteAdapter):
-    """DeepSWE (datacurve/deep-swe): 113 long-horizon tasks, Harbor format.
+def _load_deepswe_tasks_dir():
+    """Local path of the evalscope/deep-swe ModelScope snapshot's tasks/ dir
+    (ungated mirror of the gated datacurve/deep-swe). None when offline."""
+    try:
+        from modelscope import snapshot_download  # type: ignore
+    except Exception:
+        return None
+    try:
+        root = Path(snapshot_download("evalscope/deep-swe", repo_type="dataset"))
+        tasks_dir = root / "tasks"
+        return tasks_dir if tasks_dir.is_dir() else None
+    except Exception:
+        return None
 
-    The dataset is gated (access request + HF_TOKEN) and grading needs the
-    program verifiers + isolated envs; deferred until the Harbor driver lands.
-    """
+
+class DeepSweAdapter(SuiteAdapter):
+    """DeepSWE via EvalScope's Pier integration (evalscope/deep-swe mirror,
+    117 Harbor-format tasks). The Pier agent drives the repo task in Docker
+    and the binary verifier reward is exposed as acc. Agent + judge both
+    route to LM Studio (OpenAI-compatible, litellm model class)."""
 
     name = "deepswe"
     category = "coding"
-    description = "DeepSWE (datacurve/deep-swe, gated, Harbor-format verifiers)"
-    source = "datacurve/deep-swe + github.com/datacurve-ai/deep-swe"
-    status = "scaffold"
+    description = "DeepSWE (EvalScope Pier agent, 117 tasks, verifier acc)"
+    source = "evalscope/deep-swe on ModelScope via EvalScope deep_swe"
+    status = "wired"
 
     def requirements(self):
         return [
-            Requirement("pip", "datasets", "HF loader", soft=True),
-            Requirement("cli", "harbor", "Harbor runner for TB/DeepSWE-style tasks"),
-            Requirement("cli", "docker", "isolated task envs"),
-            Requirement("env", "HF_TOKEN", "gated dataset access"),
+            Requirement("pip", "modelscope", "ModelScope snapshot", soft=True),
+            Requirement("evalscope", "deep_swe",
+                        "isolated EvalScope venv with Pier (deep_swe extra)"),
+            Requirement("cli", "docker", "Pier task envs"),
         ]
 
     def tasks(self, limit=None):
-        rows = _load_hf_dataset("datacurve/deep-swe")
-        if rows is None:
-            return [Task(task_id="gated", prompt="", reference="",
-                         metadata={"skip_reason": "datacurve/deep-swe gated or "
-                                   "offline; needs HF access + HF_TOKEN"})]
-        out = [Task(task_id=str(r.get("id", i)), prompt=str(r.get("prompt", r)),
-                    reference="", metadata={"skip_reason": "Harbor verifier loop "
-                                             "lands in iteration 4"})
-               for i, r in enumerate(rows)]
+        tasks_dir = _load_deepswe_tasks_dir()
+        if tasks_dir is None:
+            return [Task(task_id="missing-data", prompt="", reference="",
+                         metadata={"skip_reason": "evalscope/deep-swe snapshot "
+                                   "unavailable; pip install modelscope + network"})]
+        out = []
+        for child in sorted(tasks_dir.iterdir()):
+            if not (child.is_dir() and (child / "task.toml").is_file()):
+                continue
+            instruction = child / "instruction.md"
+            prompt = (instruction.read_text(encoding="utf-8")[:4000]
+                      if instruction.is_file() else f"DeepSWE task: {child.name}")
+            out.append(Task(task_id=child.name, prompt=prompt, reference="",
+                            metadata={"tasks_dir": str(tasks_dir)}))
         return out[:limit] if limit else out
 
     def score(self, output, task):
-        return Score(passed=False, details="scaffold: Harbor verifier loop pending")
+        return Score(passed=False, details="deepswe EvalScope trial (see run_external)")
+
+    def run_external(self, task, ctx):
+        import os as _os
+
+        from benchharness.evalscope_driver import run_one
+
+        config = ctx.get("config")
+        model = str(ctx.get("model", ""))
+        trials = int(_os.environ.get("BENCH_DEEPSWE_TRIALS", "1"))
+        timeout = float(getattr(config, "evalscope_timeout_secs", 5400.0))
+        oc = run_one(
+            "deep_swe", task.task_id, model=model,
+            api_base=getattr(config, "base_url", "http://127.0.0.1:1234/v1"),
+            api_key=getattr(config, "api_key", "lm-studio"),
+            trials=trials, workdir=ctx["workdir"], timeout_secs=timeout,
+        )
+        output = f"deep_swe trials={trials} trace={oc.trace_path}"
+        if oc.error:
+            return output, Score(passed=False, score=0.0,
+                                 details=f"{oc.details} [{oc.error}]")
+        return output, Score(passed=oc.passed, score=oc.score, details=oc.details)
 
 
 class FrontierBenchAdapter(SuiteAdapter):

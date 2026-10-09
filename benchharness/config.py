@@ -61,6 +61,7 @@ class BenchConfig:
     per_task_timeout_secs: float = 600.0
     harbor_timeout_secs: float = 1800.0
     harbor_memory_policy: str = "ignore"
+    evalscope_timeout_secs: float = 5400.0
     judge_enabled: bool = False
     out_dir: Path = field(default_factory=lambda: Path("bench-results"))
     source_file: str | None = None
@@ -110,6 +111,10 @@ class BenchConfig:
         cfg.jobs = int(run.get("jobs", 4))
         cfg.harbor_timeout_secs = float(
             os.environ.get("BENCH_HARBOR_TIMEOUT", run.get("harbor_timeout_secs", 1800.0))
+        )
+        cfg.evalscope_timeout_secs = float(
+            os.environ.get("BENCH_EVALSCOPE_TIMEOUT",
+                           run.get("evalscope_timeout_secs", 5400.0))
         )
         # Task memory limits assume native amd64; under qemu emulation on
         # Apple Silicon the 2G default OOM-kills trials (exit 137).

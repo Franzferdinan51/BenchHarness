@@ -19,7 +19,7 @@ tools share one setup.
 | `swe-verified` | coding | wired — official docker FAIL_TO_PASS eval (gold-validated; heuristic fallback) |
 | `swe-pro` | coding | wired — Pro V2 Harbor tasks (`harbor run -p v2/tasks`, oracle PASS live; amd64 pre-pull on ARM) |
 | `swe-multilingual` | coding | wired — official docker eval when available, else heuristic |
-| `deepswe` | coding | scaffold — `datacurve/deep-swe` is gated; Harbor verifiers in iteration 4 |
+| `deepswe` | coding | wired — EvalScope Pier agent on `evalscope/deep-swe` (113 tasks, verifier acc; live trial deferred to GPU-free) |
 | `frontier-bench` | coding | scaffold — Anthropic-reported, no public artifact (TB4 line tracked) |
 | `nl2repo` | coding | wired — shell-agent loop in per-task image + `verify_cmd` grading |
 | `swe-atlas-qna` | coding | wired — `ScaleAI/SWE-Atlas-QnA`, rubric-keyword recall (LLM judge next) |
@@ -30,7 +30,7 @@ tools share one setup.
 | `toolathlon` | agentic | scaffold — app-env driver in iteration 4 (`hkust-nlp/Toolathlon`) |
 | `widesearch` | agentic | wired — `ByteDance-Seed/WideSearch`, column recall (cell judge next) |
 | `browsecomp` | agentic | wired — decrypted `smolagents/browse_comp`, containment (LLM grader next) |
-| `claweval` | agentic | scaffold — Claw-Eval (ModelScope, 161 tasks) enumerated; sandbox driver next |
+| `claweval` | agentic | wired — EvalScope pinned official runner (300 tasks, Pass³ via `BENCH_CLAW_TRIALS=3`; live trial deferred to GPU-free) |
 | `demo` | reasoning | wired golden suite (2 tasks, no deps) |
 
 `wired` suites run end-to-end today. Without the optional `datasets` package
@@ -38,11 +38,12 @@ tools share one setup.
 pipeline stays exercisable. `scaffold` suites run through the runner and report
 honestly instead of failing.
 
-Gated HuggingFace datasets (`Idavidrein/gpqa`, `cais/hle`, `datacurve/deep-swe`)
-need access plus `HF_TOKEN` in the environment (or `huggingface-cli login`);
-without it those suites use smoke samples or defer. SWE-bench Verified /
-Multilingual / Pro (`ScaleAI/SWE-bench_Pro`), SWE-Atlas-QnA, WideSearch,
-MCP-Atlas, NL2Repo, and BrowseComp are open and load directly.
+Gated HuggingFace datasets (`Idavidrein/gpqa`, `cais/hle`) need access plus
+`HF_TOKEN` in the environment (or `huggingface-cli login`); without it those
+suites use smoke samples or defer. SWE-bench Verified / Multilingual,
+SWE-Atlas-QnA, WideSearch, MCP-Atlas, NL2Repo, and BrowseComp are open and
+load directly. DeepSWE uses the ungated `evalscope/deep-swe` ModelScope
+mirror; SWE-bench Pro V2 uses its Harbor task tree (no HF needed).
 
 SWE-bench notes: with the `swe` extra installed and Docker running,
 `swe-verified` / `swe-multilingual` grade via the official swebench
@@ -67,6 +68,26 @@ Terminal-Bench notes (validated live on Apple Silicon + Colima):
   the recommended smoke test for the TB path.
 - `tb-claude` needs `ANTHROPIC_API_KEY` (Claude Code CLI); `tb-hermes`
   uses your Hermes CLI provider config for model routing.
+
+EvalScope notes (`claweval`, `deepswe` — validated infra, live agent
+trials deferred until the GPU is free):
+
+- These suites run through EvalScope's official runners in an isolated
+  venv (heavy deps stay out of this project). Set it up once:
+  `uv venv ~/.cache/benchharness/evalscope-venv && uv pip install
+  --python ~/.cache/benchharness/evalscope-venv/bin/python
+  'evalscope[deep_swe]' 'claw-eval[sandbox,mock,web] @
+  git+https://github.com/claw-eval/claw-eval.git@d3f02d4'`
+  (override the interpreter with `BENCH_EVALSCOPE_PYTHON`).
+- Agent and LLM judge both point at LM Studio (`--api-url` /
+  judge `api_url`); DeepSWE uses the litellm model class for
+  OpenAI-compatible endpoints.
+- `BENCH_CLAW_SUBSET=general,multimodal,multi_turn` selects Claw-Eval
+  splits (default `general`); `BENCH_CLAW_TRIALS=3` / `BENCH_DEEPSWE_TRIALS`
+  set repeats (3 = official Pass³ — pass requires every trial to pass).
+- The Claw-Eval sandbox image (`claw-eval-agent:latest`) builds once
+  from the pinned official Dockerfile; fixtures (~3GB) download once
+  from ModelScope. Both are cached after the first run.
 
 Notes from live testing against local reasoning models (Ornith/Qwen3-style):
 

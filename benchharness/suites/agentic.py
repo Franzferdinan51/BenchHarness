@@ -260,8 +260,13 @@ class HermesBenchAdapter(SuiteAdapter):
 
 
 def _load_claweval_rows():
-    """Raw rows from the ModelScope snapshot (bypasses the SDK builder,
-    which is incompatible with datasets>=3). Returns None when offline."""
+    """Raw (split, row) pairs from the ModelScope snapshot (bypasses the SDK
+    builder, which is incompatible with datasets>=3). None when offline."""
+    import os as _os
+
+    wanted = [s.strip() for s in
+              _os.environ.get("BENCH_CLAW_SUBSET", "general").split(",")
+              if s.strip()] or ["general"]
     try:
         from modelscope import snapshot_download  # type: ignore
     except Exception:
@@ -269,28 +274,37 @@ def _load_claweval_rows():
     try:
         root = snapshot_download("claw-eval/Claw-Eval", repo_type="dataset")
         from datasets import load_dataset  # type: ignore
-        return load_dataset("parquet",
-                            data_files=f"{root}/data/general-00000-of-00001.parquet",
-                            split="train")
+        out = []
+        for split in wanted:
+            ds = load_dataset("parquet",
+                              data_files=f"{root}/data/{split}-00000-of-00001.parquet",
+                              split="train")
+            out.extend((split, dict(r)) for r in ds)
+        return out
     except Exception:
         return None
 
 
 class ClawEvalAdapter(SuiteAdapter):
     """Claw-Eval (claw-eval/Claw-Eval on ModelScope): 300 human-verified
-    personal-assistant tasks (161 general), graded Pass³ over fixture
-    sandboxes. Task enumeration is real; the fixture-sandbox + Pass³
-    driver lands next, so tasks defer without burning model calls."""
+    personal-assistant tasks (161 general / 101 multimodal / 38 multi_turn).
+
+    Runs the pinned official runner + Docker sandbox + graders through
+    EvalScope (evalscope_driver), with agent and LLM judge routed to
+    LM Studio. BENCH_CLAW_SUBSET selects splits (default general);
+    BENCH_CLAW_TRIALS sets repeats (3 = official Pass³)."""
 
     name = "claweval"
     category = "agentic"
-    description = "Claw-Eval (ModelScope, 161 general tasks, sandbox driver pending)"
-    source = "claw-eval/Claw-Eval on ModelScope (general/multimodal/multi_turn)"
-    status = "scaffold"
+    description = "Claw-Eval (EvalScope official runner, 300 tasks, Pass³)"
+    source = "claw-eval/Claw-Eval on ModelScope via EvalScope claw_eval"
+    status = "wired"
 
     def requirements(self):
         return [Requirement("pip", "modelscope", "ModelScope snapshot", soft=True),
                 Requirement("pip", "datasets", "parquet reader", soft=True),
+                Requirement("evalscope", "claw_eval",
+                            "isolated EvalScope venv + pinned claw-eval"),
                 Requirement("cli", "docker", "fixture sandboxes")]
 
     def tasks(self, limit=None):
@@ -303,12 +317,34 @@ class ClawEvalAdapter(SuiteAdapter):
             task_id=str(r.get("task_id", i)),
             prompt=str(r.get("query", "")),
             reference="",
-            metadata={"skip_reason": "fixture sandbox + Pass³ driver lands next",
-                      "category": str(r.get("category", "")),
+            metadata={"category": str(r.get("category", "")),
                       "language": str(r.get("language", "")),
-                      "fixture": str(r.get("fixture", ""))},
-        ) for i, r in enumerate(rows)]
+                      "fixture": str(r.get("fixture", "")),
+                      "split": split},
+        ) for i, (split, r) in enumerate(rows)]
         return out[:limit] if limit else out
 
     def score(self, output, task):
-        return Score(passed=False, details="scaffold: sandbox driver pending")
+        return Score(passed=False, details="claweval EvalScope trial (see run_external)")
+
+    def run_external(self, task, ctx):
+        import os as _os
+
+        from benchharness.evalscope_driver import run_one
+
+        config = ctx.get("config")
+        model = str(ctx.get("model", ""))
+        trials = int(_os.environ.get("BENCH_CLAW_TRIALS", "1"))
+        timeout = float(getattr(config, "evalscope_timeout_secs", 3600.0))
+        oc = run_one(
+            "claw_eval", task.task_id, model=model,
+            api_base=getattr(config, "base_url", "http://127.0.0.1:1234/v1"),
+            api_key=getattr(config, "api_key", "lm-studio"),
+            split=task.metadata.get("split", "general"),
+            trials=trials, workdir=ctx["workdir"], timeout_secs=timeout,
+        )
+        output = f"claw_eval trials={trials} trace={oc.trace_path}"
+        if oc.error:
+            return output, Score(passed=False, score=0.0,
+                                 details=f"{oc.details} [{oc.error}]")
+        return output, Score(passed=oc.passed, score=oc.score, details=oc.details)
