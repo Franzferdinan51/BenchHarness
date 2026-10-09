@@ -126,3 +126,11 @@ verdict, tokens, notes.
   task enumeration, run_real subprocess, summary parsing) +
   HermesBenchAdapter (19/20 suites wired; only frontier-bench still a
   scaffold — no public artifact found on re-check).
+
+## 2026-10-09 — final parallel run: hle-tools + hermes-bench (2/2 PASS)
+
+- `--jobs 3` across suites: hle-tools/smoke-1 PASS (0.7s) and
+  hermes-bench/t02_ls PASS (31s) in one parallel run. Parallel
+  requests proven live end-to-end (plus `test_tasks_run_in_parallel`).
+- Cleanup verified: zero leftover containers, /tmp empty, 92% mem free.
+  ~8.4GB of dormant task images kept (re-pulls waste time, use no RAM).
