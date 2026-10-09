@@ -1,0 +1,27 @@
+2026-10-08 23:02:36,353 - INFO - Creating container for astropy__astropy-12907...
+2026-10-08 23:02:36,378 - INFO - Container for astropy__astropy-12907 created: cdbe149df3a05e2391014c3f948e9e64b4eec7c1e01306b95ec1df7385111481
+2026-10-08 23:02:36,441 - INFO - Container for astropy__astropy-12907 started: cdbe149df3a05e2391014c3f948e9e64b4eec7c1e01306b95ec1df7385111481
+2026-10-08 23:02:36,442 - INFO - Intermediate patch for astropy__astropy-12907 written to logs/run_evaluation/bh-e21c6445/bench-harness/astropy__astropy-12907/patch.diff, now applying to container...
+2026-10-08 23:02:36,523 - INFO - Failed to apply patch to container: git apply --verbose
+2026-10-08 23:02:37,376 - INFO - Failed to apply patch to container: git apply --verbose --3way
+2026-10-08 23:02:38,147 - INFO - Failed to apply patch to container: git apply --verbose --reject
+2026-10-08 23:02:38,290 - INFO - Failed to apply patch to container: patch --batch --forward --fuzz=5 -p1 -i
+2026-10-08 23:02:38,325 - INFO - >>>>> Patch Apply Failed:
+patch unexpectedly ends in middle of line
+patch: **** Only garbage was found in the patch input.
+
+2026-10-08 23:02:38,328 - INFO - Traceback (most recent call last):
+  File "/Users/duckets/BenchHarness/.venv/lib/python3.13/site-packages/swebench/harness/run_evaluation.py", line 333, in run_instance
+    raise EvaluationError(
+    ...<3 lines>...
+    )
+swebench.harness.utils.EvaluationError: Error in evaluation for astropy__astropy-12907: >>>>> Patch Apply Failed:
+patch unexpectedly ends in middle of line
+patch: **** Only garbage was found in the patch input.
+
+Check (logs/run_evaluation/bh-e21c6445/bench-harness/astropy__astropy-12907/run_instance.log) for more information.
+
+2026-10-08 23:02:38,328 - INFO - Attempting to stop container sweb.eval.astropy__astropy-12907.bh-e21c6445...
+2026-10-08 23:02:53,471 - INFO - Container sweb.eval.astropy__astropy-12907.bh-e21c6445 stopped successfully.
+2026-10-08 23:02:53,471 - INFO - Attempting to remove container sweb.eval.astropy__astropy-12907.bh-e21c6445...
+2026-10-08 23:02:53,517 - INFO - Container sweb.eval.astropy__astropy-12907.bh-e21c6445 removed successfully.

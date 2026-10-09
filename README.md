@@ -16,9 +16,9 @@ tools share one setup.
 | `tb-claude` | coding | wired — Harbor `--agent claude-code` (needs `ANTHROPIC_API_KEY`) |
 | `tb-hermes` | coding | wired — Harbor `--agent hermes` (Hermes-native model config) |
 | `hermes-bench` | agentic | scaffold — Nous HermesIndex suite is closed; `tb-hermes` is the proxy |
-| `swe-verified` | coding | wired — HF dataset + patch scoring (docker FAIL_TO_PASS eval next) |
+| `swe-verified` | coding | wired — official docker FAIL_TO_PASS eval (gold-validated; heuristic fallback) |
 | `swe-pro` | coding | wired — `ScaleAI/SWE-bench_Pro` (lowercase fail/pass keys mapped) |
-| `swe-multilingual` | coding | wired — same loader/scorer as swe-verified |
+| `swe-multilingual` | coding | wired — official docker eval when available, else heuristic |
 | `deepswe` | coding | scaffold — `datacurve/deep-swe` is gated; Harbor verifiers in iteration 4 |
 | `frontier-bench` | coding | scaffold — no public dataset/harness found yet |
 | `nl2repo` | coding | scaffold — real task list; docker build+verify loop in iteration 4 |
@@ -43,6 +43,13 @@ need access plus `HF_TOKEN` in the environment (or `huggingface-cli login`);
 without it those suites use smoke samples or defer. SWE-bench Verified /
 Multilingual / Pro (`ScaleAI/SWE-bench_Pro`), SWE-Atlas-QnA, WideSearch,
 MCP-Atlas, NL2Repo, and BrowseComp are open and load directly.
+
+SWE-bench notes: with the `swe` extra installed and Docker running,
+`swe-verified` / `swe-multilingual` grade via the official swebench
+FAIL_TO_PASS/PASS_TO_PASS docker eval (gold patch resolves, garbage does
+not — both verified live). Images are amd64-only; the harness pre-pulls
+with `--platform linux/amd64` on Apple Silicon. Set `BENCH_SWE_DOCKER=0`
+to force fast heuristic grading.
 
 Terminal-Bench notes (validated live on Apple Silicon + Colima):
 

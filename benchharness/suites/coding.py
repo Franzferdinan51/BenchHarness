@@ -52,6 +52,17 @@ class _SweBase(SuiteAdapter):
     # ornith-35b was still mid-analysis at 16k. 32k gives deep reasoning
     # plus the answer room (--max-tokens overrides).
     max_tokens = 32768
+    # Datasets the installed swebench package can grade officially.
+    # ScaleAI/SWE-bench_Pro uses a different image/eval layout; heuristic
+    # grading until its driver is validated.
+    docker_datasets = frozenset({
+        "princeton-nlp/SWE-bench_Verified",
+        "SWE-bench/SWE-bench_Multilingual",
+    })
+
+    def prepare(self, workdir: Path) -> None:
+        self._workdir = workdir / "swe-reports"
+        self._workdir.mkdir(parents=True, exist_ok=True)
 
     SMOKE = [
         ("smoke-1",
@@ -96,17 +107,51 @@ class _SweBase(SuiteAdapter):
         patch = extract_patch(strip_thinking(output))
         if not patch:
             return Score(passed=False, details="no patch extracted")
+        docked = self._docker_grade(task, patch)
+        if docked is not None:
+            return docked
+        return self._heuristic_score(task, patch)
+
+    def _docker_grade(self, task: Task, patch: str) -> Score | None:
+        """Official docker grading, or None when unavailable/inapplicable."""
+        if self.dataset not in self.docker_datasets:
+            return None
+        try:
+            from benchharness.swe_eval import docker_grading_available, grade_with_docker
+        except Exception:
+            return None
+        if not docker_grading_available():
+            return None
+        # prepare() runs before scoring in real runs; unit tests that skip
+        # it (and lack the swebench/docker stack) stay on heuristics.
+        workdir = getattr(self, "_workdir", None)
+        if workdir is None:
+            return None
+        try:
+            grade = grade_with_docker(self.dataset, task.task_id, patch, workdir)
+        except Exception as exc:
+            return self._heuristic_score(
+                task, patch, prefix=f"docker eval crashed ({exc}); heuristic: ")
+        if "crashed" in grade.details or "unreadable" in grade.details:
+            return self._heuristic_score(
+                task, patch, prefix=f"{grade.details}; heuristic: ")
+        return Score(passed=grade.resolved, score=1.0 if grade.resolved else 0.0,
+                     details=grade.details)
+
+    def _heuristic_score(self, task: Task, patch: str, prefix: str = "") -> Score:
+        if task.reference and patch.strip() == task.reference.strip():
+            return Score(passed=True, score=1.0,
+                         details=prefix + "exact patch match")
         ref_files = touched_files(task.reference)
         got_files = touched_files(patch)
-        if task.reference and patch.strip() == task.reference.strip():
-            return Score(passed=True, score=1.0, details="exact patch match")
         if ref_files and got_files & ref_files:
             overlap = len(got_files & ref_files) / len(ref_files)
             return Score(passed=False, score=0.5 * overlap,
-                         details=f"partial: touches {sorted(got_files & ref_files)}; "
-                                 "docker FAIL_TO_PASS eval lands in iteration 2")
+                         details=prefix + f"partial: touches "
+                                 f"{sorted(got_files & ref_files)} "
+                                 "(heuristic; docker eval unavailable)")
         return Score(passed=False, score=0.1 if len(patch) > 20 else 0.0,
-                     details="patch extracted but touches no gold files")
+                     details=prefix + "patch extracted but touches no gold files")
 
 
 class SweVerifiedAdapter(_SweBase):

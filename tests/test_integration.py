@@ -233,3 +233,77 @@ def test_swe_patch_scoring():
     assert exact.passed and exact.score == 1.0
     empty = adapter.score("I have no idea", task)
     assert not empty.passed and empty.score == 0.0
+
+
+def test_swe_docker_grade_preferred_and_fallback(tmp_path, monkeypatch):
+    import benchharness.swe_eval as swe_eval
+    from benchharness.registry import get_suite
+    from benchharness.suites.base import Task
+
+    adapter = get_suite("swe-verified")
+    adapter.prepare(tmp_path)
+    ref = "diff --git a/x.py b/x.py\n- a\n+ b"
+    task = Task(task_id="t", prompt="p", reference=ref)
+    out = f"```diff\n{ref}\n```"
+
+    monkeypatch.setattr(swe_eval, "docker_grading_available", lambda: True)
+    monkeypatch.setattr(swe_eval, "grade_with_docker",
+                        lambda *a, **k: swe_eval.DockerGrade(True, "official"))
+    assert adapter.score(out, task).details == "official"
+
+    monkeypatch.setattr(swe_eval, "grade_with_docker",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    fallen = adapter.score(out, task)
+    assert fallen.passed and fallen.details.startswith("docker eval crashed")
+
+    monkeypatch.setattr(swe_eval, "docker_grading_available", lambda: False)
+    assert "official" not in adapter.score(out, task).details
+
+
+def test_ensure_image_skips_present_and_forces_amd64(monkeypatch):
+    import benchharness.swe_eval as swe_eval
+
+    calls: list[list[str]] = []
+
+    class FakeProc:
+        def __init__(self, stdout="", returncode=0, stderr=""):
+            self.stdout = stdout
+            self.returncode = returncode
+            self.stderr = stderr
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if cmd[:2] == ["docker", "images"]:
+            return FakeProc(stdout="" if "missing" in cmd[-1] else "abc123\n")
+        return FakeProc(stdout="pulled")
+
+    monkeypatch.setattr(swe_eval.subprocess, "run", fake_run)
+    monkeypatch.setattr(swe_eval.platform, "machine", lambda: "arm64")
+    swe_eval.ensure_image("img:present")
+    assert calls == [["docker", "images", "-q", "img:present"]]
+    swe_eval.ensure_image("img:missing")
+    assert calls[-1] == ["docker", "pull", "--platform", "linux/amd64", "img:missing"]
+
+
+def test_eval_dataset_mapping():
+    import benchharness.swe_eval as swe_eval
+    assert swe_eval.eval_dataset_for("princeton-nlp/SWE-bench_Verified") == \
+        "SWE-bench/SWE-bench_Verified"
+    assert swe_eval.eval_dataset_for("other/ds") == "other/ds"
+
+
+def test_swe_docker_env_kill_switch(monkeypatch):
+    import benchharness.swe_eval as swe_eval
+    monkeypatch.setenv("BENCH_SWE_DOCKER", "0")
+    assert swe_eval.docker_grading_available() is False
+
+
+def test_swe_pro_stays_heuristic(tmp_path):
+    from benchharness.registry import get_suite
+    from benchharness.suites.base import Task
+    adapter = get_suite("swe-pro")
+    adapter.prepare(tmp_path)
+    ref = "diff --git a/x.py b/x.py\n- a\n+ b"
+    assert "ScaleAI" in adapter.source
+    assert adapter._docker_grade(Task(task_id="t", prompt="p", reference=ref),
+                                 ref) is None
