@@ -448,3 +448,95 @@ def test_tb_prepare_fails_fast_without_daemon(monkeypatch, tmp_path):
 
     with pytest.raises(RuntimeError, match="docker daemon unreachable"):
         get_suite("tb-terminus").prepare(tmp_path)
+
+
+def test_frontier_dataset_default_and_override(monkeypatch):
+    from benchharness.registry import get_suite
+    from benchharness.suites.coding import FRONTIER_DATASET_DEFAULT
+
+    adapter = get_suite("frontier-bench")
+    assert adapter.status == "wired"
+    assert adapter._dataset() == FRONTIER_DATASET_DEFAULT
+    assert FRONTIER_DATASET_DEFAULT.startswith("frontier-bench/")
+    assert "@sha256:" in FRONTIER_DATASET_DEFAULT
+    monkeypatch.setenv("FB_DATASET", "custom/ds@1")
+    assert adapter._dataset() == "custom/ds@1"
+    kinds = [(r.kind, r.name) for r in adapter.requirements()]
+    assert ("note", "harbor-login") in kinds
+
+
+def test_harbor_auth_status_shapes(monkeypatch):
+    import subprocess
+
+    import benchharness.harbor_driver as driver
+
+    monkeypatch.setattr(driver.shutil, "which", lambda c: "/usr/bin/harbor")
+    monkeypatch.setattr(
+        driver.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            a[0], 0, stdout="Logged in as octocat\n", stderr=""
+        ),
+    )
+    ok, detail = driver.harbor_auth_status()
+    assert ok and "octocat" in detail
+    monkeypatch.setattr(
+        driver.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            a[0],
+            0,
+            stdout="Not authenticated. Run `harbor auth login`.\n",
+            stderr="",
+        ),
+    )
+    ok, _ = driver.harbor_auth_status()
+    assert not ok
+    import pytest
+
+    with pytest.raises(RuntimeError, match="harbor auth login"):
+        driver.require_harbor_auth()
+
+
+def test_frontier_prepare_gates_auth_on_cache_miss(monkeypatch, tmp_path):
+    import pytest
+
+    import benchharness.harbor_driver as driver
+    from benchharness.registry import get_suite
+
+    monkeypatch.setenv("BENCH_HARBOR_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setattr(
+        driver, "docker_daemon_status", lambda timeout_secs=20.0: (True, "ok")
+    )
+    monkeypatch.setattr(
+        driver,
+        "harbor_auth_status",
+        lambda timeout_secs=30.0: (False, "not authenticated"),
+    )
+    with pytest.raises(RuntimeError, match="harbor auth login"):
+        get_suite("frontier-bench").prepare(tmp_path)
+
+
+def test_frontier_prepare_skips_auth_when_cached(monkeypatch, tmp_path):
+    import benchharness.harbor_driver as driver
+    from benchharness.registry import get_suite
+
+    cache = tmp_path / "cache" / "frontier-bench" / "demo-task"
+    cache.mkdir(parents=True)
+    (cache / "task.toml").write_text("[task]\n")
+    monkeypatch.setenv("BENCH_HARBOR_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setattr(
+        driver, "docker_daemon_status", lambda timeout_secs=20.0: (True, "ok")
+    )
+
+    def boom(timeout_secs=30.0):
+        raise AssertionError("auth must not be checked when cached")
+
+    monkeypatch.setattr(driver, "harbor_auth_status", boom)
+    monkeypatch.setattr(
+        driver, "ensure_dataset", lambda dataset: tmp_path / "cache" / "frontier-bench"
+    )
+    get_suite("frontier-bench").prepare(tmp_path)  # must not raise
+    tasks = get_suite("frontier-bench").tasks()
+    assert [t.task_id for t in tasks] == ["demo-task"]
+    assert tasks[0].metadata["harbor_dataset"].startswith("frontier-bench/")

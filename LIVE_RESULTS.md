@@ -134,3 +134,17 @@ verdict, tokens, notes.
   requests proven live end-to-end (plus `test_tasks_run_in_parallel`).
 - Cleanup verified: zero leftover containers, /tmp empty, 92% mem free.
   ~8.4GB of dormant task images kept (re-pulls waste time, use no RAM).
+
+## 2026-10-09 — frontier-bench — source found, login-gated
+
+- Frontier-Bench v0.1 == Terminal-Bench 3.0 renamed (74 tasks). Exact
+  leaderboard-pinned ref:
+  `frontier-bench/frontier-bench@sha256:97fd2ba3…7171763`.
+- The dataset 403s without Harbor login (`harbor auth status` →
+  "Not authenticated"). Iteration 32 wires the adapter (terminus-2,
+  digest-pinned default, `$FB_DATASET` override) with an auth gate in
+  `prepare()` that fails fast with login instructions (proven live).
+  After one `harbor auth login`, `run --suite frontier-bench` works.
+  Notes: per-task Dockerfiles build on first run (no prebuilt images);
+  4 GPU tasks will score 0.0 on a GPU-less Mac.
+- 20/20 suites now wired; zero scaffolds remain.

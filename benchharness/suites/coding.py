@@ -459,37 +459,6 @@ class DeepSweAdapter(SuiteAdapter):
         return output, Score(passed=oc.passed, score=oc.score, details=oc.details)
 
 
-class FrontierBenchAdapter(SuiteAdapter):
-    """Frontier-Bench v0.1: Anthropic-reported agentic coding numbers (Opus 5
-    at 43.3%) with no public dataset or harness as of iteration 14
-    (Harbor Hub re-checked: 340 datasets, no frontier entry; TB4 line
-    continues via ryanmarten/tb4-preview, not Frontier itself).
-    frontierbench.ai redirects to tbench.ai. Stays scaffold; re-check
-    the Harbor registry + tbench.ai each iteration."""
-
-    name = "frontier-bench"
-    category = "coding"
-    description = "Frontier-Bench v0.1 (no public dataset found yet)"
-    source = "unresolved: no public dataset/harness located"
-    status = "scaffold"
-
-    def tasks(self, limit=None):
-        return [
-            Task(
-                task_id="no-public-source",
-                prompt="",
-                reference="",
-                metadata={
-                    "skip_reason": "no public Frontier-Bench "
-                    "dataset/harness found; rerun research"
-                },
-            )
-        ]
-
-    def score(self, output, task):
-        return Score(passed=False, details="scaffold: no public source")
-
-
 class Nl2RepoAdapter(SuiteAdapter):
     """NL2Repo (AweAI-Team/AweAgent-Meta-NL2Repo): build a repo from an NL spec.
 
@@ -901,3 +870,58 @@ class TbHermesAdapter(_TerminalBenchBase):
     description = "Terminal-Bench 2.1 via Hermes Agent harness (Harbor)"
     source = "harbor run --dataset terminal-bench-2-1 --agent hermes"
     harbor_agent = "hermes"
+
+
+FRONTIER_DATASET_DEFAULT = (
+    "frontier-bench/frontier-bench"
+    "@sha256:97fd2ba3aabdda16823a1a8ea695a3875e50e800caa60b450686deedc7171763"
+)
+
+
+class FrontierBenchAdapter(_TerminalBenchBase):
+    """Frontier-Bench v0.1 (Terminal-Bench 3.0 renamed): 74 tasks across
+    seven domains, via terminus-2 on Harbor, LM Studio-routed.
+
+    Source: the leaderboard's own pinned DATASET_REF (a bare name won't
+    do — Frontier is a *moving* benchmark, tasks added/revised
+    continuously; override with $FB_DATASET). The dataset is
+    login-gated: run `harbor auth login` (GitHub OAuth) once before the
+    first download. Every task ships environment/Dockerfile (12 with
+    compose too) and builds — no prebuilt images — and 4 tasks want a
+    GPU, so expect 0.0 rows for those on a GPU-less Mac.
+    """
+
+    name = "frontier-bench"
+    description = "Frontier-Bench v0.1 via Terminus-2 harness (Harbor, 74 tasks)"
+    source = f"harbor run --dataset {FRONTIER_DATASET_DEFAULT} --agent terminus-2"
+    harbor_agent = "terminus-2"
+
+    def _dataset(self) -> str:
+        import os as _os
+
+        return _os.environ.get("FB_DATASET", FRONTIER_DATASET_DEFAULT)
+
+    def requirements(self):
+        return [
+            *super().requirements(),
+            Requirement(
+                "note",
+                "harbor-login",
+                "login-gated dataset: `harbor auth login` before first run",
+            ),
+        ]
+
+    def prepare(self, workdir: Path) -> None:
+        from benchharness.harbor_driver import (
+            dataset_dir_name,
+            default_cache_dir,
+            ensure_dataset,
+            require_docker_daemon,
+            require_harbor_auth,
+        )
+
+        require_docker_daemon()
+        cached = default_cache_dir() / dataset_dir_name(self._dataset())
+        if not (cached.is_dir() and any(cached.iterdir())):
+            require_harbor_auth()
+        ensure_dataset(self._dataset())

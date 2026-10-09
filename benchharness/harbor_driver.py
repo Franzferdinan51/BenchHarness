@@ -72,6 +72,40 @@ def require_docker_daemon() -> str:
     return detail
 
 
+def harbor_auth_status(timeout_secs: float = 30.0) -> tuple[bool, str]:
+    """Check `harbor auth status` (some datasets are login-gated)."""
+    if shutil.which("harbor") is None:
+        return False, "harbor CLI not installed"
+    try:
+        proc = subprocess.run(
+            ["harbor", "auth", "status"],
+            capture_output=True,
+            text=True,
+            timeout=timeout_secs,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"harbor auth status timed out after {timeout_secs:.0f}s"
+    except OSError as exc:
+        return False, f"harbor auth status failed: {exc}"
+    out = (proc.stdout or "").strip()
+    if proc.returncode == 0 and "not authenticated" not in out.lower():
+        return True, out.splitlines()[0][-200:] if out else "authenticated"
+    return False, out.splitlines()[0][-200:] if out else "not authenticated"
+
+
+def require_harbor_auth() -> str:
+    """Raise RuntimeError unless Harbor login is active. Returns detail."""
+    ok, detail = harbor_auth_status()
+    if not ok:
+        raise RuntimeError(
+            f"Harbor login required ({detail}); run `harbor auth login` "
+            "(GitHub OAuth) once, then re-run — frontier-bench and other "
+            "gated datasets 403 until then"
+        )
+    return detail
+
+
 def default_cache_dir() -> Path:
     return Path(
         os.environ.get(

@@ -20,7 +20,7 @@ tools share one setup.
 | `swe-pro` | coding | wired — Pro V2 Harbor tasks (`harbor run -p v2/tasks`, oracle PASS live; amd64 pre-pull on ARM) |
 | `swe-multilingual` | coding | wired — official docker eval when available, else heuristic |
 | `deepswe` | coding | wired — EvalScope Pier agent on `evalscope/deep-swe` (113 tasks, verifier acc; live FAIL 0.0 logged) |
-| `frontier-bench` | coding | scaffold — Anthropic-reported, no public artifact (TB4 line tracked) |
+| `frontier-bench` | coding | wired — Frontier-Bench v0.1 (= TB 3.0, 74 tasks, pinned digest) via terminus-2; needs `harbor auth login` once (login-gated dataset) |
 | `nl2repo` | coding | wired — shell-agent loop in per-task image + `verify_cmd` grading |
 | `swe-atlas-qna` | coding | wired — `ScaleAI/SWE-Atlas-QnA`, rubric-keyword recall (LLM judge next) |
 | `hle` | reasoning | wired — `cais/hle`, normalized-answer grading |
