@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from benchharness.schema import Score
-from benchharness.suites.base import SuiteAdapter, Task
+from benchharness.suites.base import SuiteAdapter, Task, strip_thinking
 
 
 class DemoAdapter(SuiteAdapter):
@@ -22,5 +22,5 @@ class DemoAdapter(SuiteAdapter):
         return tasks[:limit] if limit else tasks
 
     def score(self, output, task):
-        ok = task.reference in output
+        ok = task.reference in strip_thinking(output)
         return Score(passed=ok, details=f"contains({task.reference!r})={ok}")

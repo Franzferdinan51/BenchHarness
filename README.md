@@ -12,23 +12,23 @@ tools share one setup.
 
 | Suite | Category | Status |
 |---|---|---|
-| `tb-terminus` | coding | scaffold — Terminus-2 harness loop lands next iteration |
-| `tb-claude` | coding | scaffold — Claude Code harness loop lands next iteration |
+| `tb-terminus` | coding | scaffold — Harbor driver (`--agent terminus-2`) lands in iteration 4 |
+| `tb-claude` | coding | scaffold — Harbor driver (`--agent claude-code`) lands in iteration 4 |
 | `swe-verified` | coding | wired — HF dataset + patch scoring (docker FAIL_TO_PASS eval next) |
 | `swe-pro` | coding | wired — `ScaleAI/SWE-bench_Pro` (lowercase fail/pass keys mapped) |
 | `swe-multilingual` | coding | wired — same loader/scorer as swe-verified |
-| `deepswe` | coding | scaffold — official dataset id TBD |
-| `frontier-bench` | coding | scaffold — official dataset id TBD |
-| `nl2repo` | coding | scaffold — official dataset id TBD |
-| `swe-atlas-qna` | coding | scaffold — official dataset id TBD |
+| `deepswe` | coding | scaffold — `datacurve/deep-swe` is gated; Harbor verifiers in iteration 4 |
+| `frontier-bench` | coding | scaffold — no public dataset/harness found yet |
+| `nl2repo` | coding | scaffold — real task list; docker build+verify loop in iteration 4 |
+| `swe-atlas-qna` | coding | wired — `ScaleAI/SWE-Atlas-QnA`, rubric-keyword recall (LLM judge next) |
 | `hle` | reasoning | wired — `cais/hle`, normalized-answer grading |
 | `hle-tools` | reasoning | wired — HLE + sandboxed `run_python` tool loop |
 | `gpqa-diamond` | reasoning | wired — `Idavidrein/gpqa`, exact-letter grading |
-| `mcp-atlas` | agentic | scaffold — tool loop next iteration |
-| `toolathlon` | agentic | scaffold — tool loop next iteration |
-| `widesearch` | agentic | scaffold — tool loop next iteration |
-| `browsecomp` | agentic | scaffold — tool loop next iteration |
-| `claweval` | agentic | scaffold — tool loop next iteration |
+| `mcp-atlas` | agentic | wired — `ScaleAI/MCP-Atlas`, GTFA claim recall (tool-call fidelity next) |
+| `toolathlon` | agentic | scaffold — app-env driver in iteration 4 (`hkust-nlp/Toolathlon`) |
+| `widesearch` | agentic | wired — `ByteDance-Seed/WideSearch`, column recall (cell judge next) |
+| `browsecomp` | agentic | wired — decrypted `smolagents/browse_comp`, containment (LLM grader next) |
+| `claweval` | agentic | scaffold — source candidates unresolved, needs follow-up research |
 | `demo` | reasoning | wired golden suite (2 tasks, no deps) |
 
 `wired` suites run end-to-end today. Without the optional `datasets` package
@@ -36,10 +36,19 @@ tools share one setup.
 pipeline stays exercisable. `scaffold` suites run through the runner and report
 honestly instead of failing.
 
-Gated HuggingFace datasets (`Idavidrein/gpqa`, `cais/hle`) need access plus
-`HF_TOKEN` in the environment (or `huggingface-cli login`); without it those
-suites use smoke samples. SWE-bench Verified / Multilingual / Pro
-(`ScaleAI/SWE-bench_Pro`) are open and load directly.
+Gated HuggingFace datasets (`Idavidrein/gpqa`, `cais/hle`, `datacurve/deep-swe`)
+need access plus `HF_TOKEN` in the environment (or `huggingface-cli login`);
+without it those suites use smoke samples or defer. SWE-bench Verified /
+Multilingual / Pro (`ScaleAI/SWE-bench_Pro`), SWE-Atlas-QnA, WideSearch,
+MCP-Atlas, NL2Repo, and BrowseComp are open and load directly.
+
+Notes from live testing against local reasoning models (Ornith/Qwen3-style):
+
+- Scorers strip `<think>...</think>` blocks before grading, so decoy letters
+  and draft diffs in the trace can't pollute the verdict.
+- Thinking models can spend thousands of tokens reasoning before answering;
+  SWE suites default to a 16384 completion cap (`--max-tokens` overrides).
+- The picker prefers the loaded model; set `LM_STUDIO_MODEL` to force one.
 
 ## Setup
 

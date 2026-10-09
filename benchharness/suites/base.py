@@ -11,12 +11,27 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from benchharness.schema import Score
+
+_THINK_RE = re.compile(r"<think(?:ing)?>.*?</think(?:ing)?>", re.DOTALL | re.IGNORECASE)
+
+
+def strip_thinking(text: str) -> str:
+    """Remove <think>/<thinking> reasoning blocks (Ornith/Qwen3-style).
+
+    Scorers must grade the final answer, not the trace: traces contain
+    decoy letters, fake diffs, and exploratory wrong answers.
+    """
+    cleaned = _THINK_RE.sub("", text)
+    # Unterminated block (truncated at cap): drop from the opener on.
+    cleaned = re.sub(r"<think(?:ing)?>.*$", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+    return cleaned.strip()
 
 
 @dataclass

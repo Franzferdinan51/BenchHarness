@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 
 from benchharness.schema import Score
-from benchharness.suites.base import Requirement, SuiteAdapter, Task
+from benchharness.suites.base import Requirement, SuiteAdapter, Task, strip_thinking
 from benchharness.suites.reasoning import _load_hf_dataset
 
 SWE_SYSTEM = (
@@ -91,7 +91,7 @@ class _SweBase(SuiteAdapter):
         return out[:limit] if limit else out
 
     def score(self, output, task):
-        patch = extract_patch(output)
+        patch = extract_patch(strip_thinking(output))
         if not patch:
             return Score(passed=False, details="no patch extracted")
         ref_files = touched_files(task.reference)
@@ -128,106 +128,208 @@ class SweMultilingualAdapter(_SweBase):
     source = "SWE-bench/SWE-bench_Multilingual"
 
 
-class DeepSweAdapter(_SweBase):
+class DeepSweAdapter(SuiteAdapter):
+    """DeepSWE (datacurve/deep-swe): 113 long-horizon tasks, Harbor format.
+
+    The dataset is gated (access request + HF_TOKEN) and grading needs the
+    program verifiers + isolated envs; deferred until the Harbor driver lands.
+    """
+
     name = "deepswe"
-    description = "DeepSWE (long-horizon SWE tasks)"
-    dataset = ""
-    source = "DeepSWE official release (id TBD — verify)"
-    status = "scaffold"
-
-
-class FrontierBenchAdapter(SuiteAdapter):
-    name = "frontier-bench"
     category = "coding"
-    description = "Frontier-Bench v0.1 (frontier coding tasks)"
-    source = "Frontier-Bench v0.1 official release (id TBD — verify)"
-    status = "scaffold"
-
-    def tasks(self, limit=None):
-        return [Task(task_id="placeholder-1",
-                      prompt="Frontier-Bench v0.1 wiring lands in iteration 2.",
-                      reference="",
-                      metadata={"scaffold": True})][:limit] if limit else [
-            Task(task_id="placeholder-1",
-                 prompt="Frontier-Bench v0.1 wiring lands in iteration 2.",
-                 reference="", metadata={"scaffold": True})]
-
-    def score(self, output, task):
-        return Score(passed=False, details="scaffold: oracle not wired yet")
-
-
-class Nl2RepoAdapter(SuiteAdapter):
-    name = "nl2repo"
-    category = "coding"
-    description = "NL2Repo (natural-language to repository generation)"
-    source = "NL2Repo official release (id TBD — verify)"
-    status = "scaffold"
-
-    def tasks(self, limit=None):
-        return [Task(task_id="placeholder-1",
-                      prompt="NL2Repo wiring lands in iteration 2.",
-                      reference="", metadata={"scaffold": True})]
-
-    def score(self, output, task):
-        return Score(passed=False, details="scaffold: oracle not wired yet")
-
-
-class SweAtlasQnaAdapter(SuiteAdapter):
-    name = "swe-atlas-qna"
-    category = "coding"
-    description = "SWE Atlas – QnA (software-engineering question answering)"
-    source = "SWE Atlas QnA official release (id TBD — verify)"
-    status = "scaffold"
-
-    def tasks(self, limit=None):
-        return [Task(task_id="placeholder-1",
-                      prompt="SWE Atlas QnA wiring lands in iteration 2.",
-                      reference="", metadata={"scaffold": True})]
-
-    def score(self, output, task):
-        return Score(passed=False, details="scaffold: oracle not wired yet")
-
-
-class _TerminalBenchBase(SuiteAdapter):
-    category = "coding"
+    description = "DeepSWE (datacurve/deep-swe, gated, Harbor-format verifiers)"
+    source = "datacurve/deep-swe + github.com/datacurve-ai/deep-swe"
     status = "scaffold"
 
     def requirements(self):
         return [
-            Requirement("pip", "terminal_bench", "official terminal-bench package"),
+            Requirement("pip", "datasets", "HF loader", soft=True),
+            Requirement("cli", "harbor", "Harbor runner for TB/DeepSWE-style tasks"),
+            Requirement("cli", "docker", "isolated task envs"),
+            Requirement("env", "HF_TOKEN", "gated dataset access"),
+        ]
+
+    def tasks(self, limit=None):
+        rows = _load_hf_dataset("datacurve/deep-swe")
+        if rows is None:
+            return [Task(task_id="gated", prompt="", reference="",
+                         metadata={"skip_reason": "datacurve/deep-swe gated or "
+                                   "offline; needs HF access + HF_TOKEN"})]
+        out = [Task(task_id=str(r.get("id", i)), prompt=str(r.get("prompt", r)),
+                    reference="", metadata={"skip_reason": "Harbor verifier loop "
+                                             "lands in iteration 4"})
+               for i, r in enumerate(rows)]
+        return out[:limit] if limit else out
+
+    def score(self, output, task):
+        return Score(passed=False, details="scaffold: Harbor verifier loop pending")
+
+
+class FrontierBenchAdapter(SuiteAdapter):
+    """Frontier-Bench v0.1: agentic terminal coding (Anthropic-reported SOTA
+    numbers exist, e.g. Opus 5 at 43.3%, but no public dataset or harness
+    was found as of iteration 3). Stays scaffold until a source appears."""
+
+    name = "frontier-bench"
+    category = "coding"
+    description = "Frontier-Bench v0.1 (no public dataset found yet)"
+    source = "unresolved: no public dataset/harness located"
+    status = "scaffold"
+
+    def tasks(self, limit=None):
+        return [Task(task_id="no-public-source", prompt="", reference="",
+                     metadata={"skip_reason": "no public Frontier-Bench "
+                               "dataset/harness found; rerun research"})]
+
+    def score(self, output, task):
+        return Score(passed=False, details="scaffold: no public source")
+
+
+class Nl2RepoAdapter(SuiteAdapter):
+    """NL2Repo (AweAI-Team/AweAgent-Meta-NL2Repo): build a repo from an NL spec.
+
+    Task enumeration is real; the docker build + golden-test verify loop
+    (verify_cmd in per-task images) lands in iteration 4, so tasks defer
+    without burning model calls.
+    """
+
+    name = "nl2repo"
+    category = "coding"
+    description = "NL2Repo (AweAI-Team/AweAgent-Meta-NL2Repo, docker golden tests)"
+    source = "AweAI-Team/AweAgent-Meta-NL2Repo"
+    status = "scaffold"
+    max_tokens = 16384
+
+    def requirements(self):
+        return [
+            Requirement("pip", "datasets", "HF loader", soft=True),
+            Requirement("cli", "docker", "per-task evaluation images"),
+        ]
+
+    def tasks(self, limit=None):
+        rows = _load_hf_dataset("AweAI-Team/AweAgent-Meta-NL2Repo")
+        if rows is None:
+            return [Task(task_id="missing-data", prompt="", reference="",
+                         metadata={"skip_reason": "NL2Repo dataset offline; "
+                                   "install datasets + network"})]
+        out = [Task(
+            task_id=str(r.get("instance_id", i)),
+            prompt=str(r.get("start_instruction", "")),
+            reference="",
+            metadata={"skip_reason": "docker build+verify loop lands in "
+                                     "iteration 4",
+                      "package": r.get("package_name", ""),
+                      "verify_cmd": str(r.get("verify_cmd", "")),
+                      "image": r.get("evaluation_image", "")},
+        ) for i, r in enumerate(rows)]
+        return out[:limit] if limit else out
+
+    def score(self, output, task):
+        return Score(passed=False, details="scaffold: docker verify loop pending")
+
+
+def _keywords(text: str) -> set[str]:
+    words = re.findall(r"[a-z0-9_]{4,}", text.lower())
+    stop = {"that", "this", "with", "from", "have", "will", "about", "into",
+            "your", "what", "when", "where", "which", "their", "there", "code",
+            "file", "files", "function", "using", "used", "such", "than", "then"}
+    return {w for w in words if w not in stop}
+
+
+class SweAtlasQnaAdapter(SuiteAdapter):
+    """SWE Atlas QnA (ScaleAI/SWE-Atlas-QnA): 124 deep code-comprehension Qs.
+
+    Scores rubric-keyword recall: fraction of rubric keywords covered by the
+    answer. The official rubric LLM-judge lands in iteration 4.
+    """
+
+    name = "swe-atlas-qna"
+    category = "coding"
+    description = "SWE Atlas QnA (ScaleAI/SWE-Atlas-QnA, rubric-keyword recall)"
+    source = "ScaleAI/SWE-Atlas-QnA (124 tasks, 11 repos)"
+    status = "wired"
+    max_tokens = 4096
+
+    SMOKE = [("smoke-1",
+              "Repo utils (python): where is the retry helper defined and what "
+              "does it do?",
+              "lib/retry.py defines retry() with backoff",
+              "retry backoff lib")]
+
+    def requirements(self):
+        return [Requirement("pip", "datasets", "HF loader (else smoke)", soft=True)]
+
+    def tasks(self, limit=None):
+        rows = _load_hf_dataset("ScaleAI/SWE-Atlas-QnA")
+        out: list[Task] = []
+        if rows is not None:
+            for r in rows:
+                out.append(Task(
+                    task_id=str(r.get("task_id", len(out))),
+                    prompt=f"Repository: {r.get('repository_url', '')} "
+                           f"@{r.get('repository_base_commit', '')} "
+                           f"({r.get('language', '')})\n\n"
+                           f"{r.get('prompt', '')}",
+                    reference=str(r.get("reference_answer", "")),
+                    metadata={"rubric": str(r.get("rubric", "")),
+                              "category": str(r.get("category", ""))},
+                ))
+        else:
+            for tid, prompt, ref, rubric in self.SMOKE:
+                out.append(Task(task_id=tid, prompt=prompt, reference=ref,
+                                metadata={"rubric": rubric}))
+        return out[:limit] if limit else out
+
+    def score(self, output, task):
+        answer = strip_thinking(output)
+        rubric_keys = _keywords(task.metadata.get("rubric", "") or task.reference)
+        if not rubric_keys:
+            return Score(passed=False, details="no rubric keywords")
+        hits = {k for k in rubric_keys if k in answer.lower()}
+        recall = len(hits) / len(rubric_keys)
+        return Score(passed=recall >= 0.6, score=recall,
+                     details=f"rubric_recall={len(hits)}/{len(rubric_keys)}; "
+                             "LLM rubric judge lands in iteration 4")
+
+
+class _TerminalBenchBase(SuiteAdapter):
+    """Terminal-Bench 2.x runs through Harbor (harbor-framework/harbor):
+
+        harbor run --dataset terminal-bench@2.0 --agent <terminus-2|claude-code>
+
+    Both adapters share the task set; the `--agent` harness differs. The
+    Harbor driver (LM Studio model routing + reward parsing) lands in
+    iteration 4.
+    """
+
+    category = "coding"
+    status = "scaffold"
+    harbor_agent = ""
+
+    def requirements(self):
+        return [
+            Requirement("cli", "harbor", "Harbor runner (harbor-framework/harbor)"),
             Requirement("cli", "docker", "task containers + oracle"),
         ]
 
     def tasks(self, limit=None):
-        try:
-            from terminal_bench.dataset import load_datasets  # type: ignore
-        except Exception:
-            return [Task(task_id="missing-deps",
-                         prompt="",
-                         reference="",
-                         metadata={"skip_reason": "terminal_bench package not installed"})]
-        try:
-            names = load_datasets()
-        except Exception as exc:
-            return [Task(task_id="load-error", prompt="", reference="",
-                         metadata={"skip_reason": f"dataset load failed: {exc}"})]
-        tasks = [Task(task_id=n, prompt=f"Terminal-Bench task: {n}",
-                      reference="", metadata={"tb_task": n}) for n in names]
-        return tasks[:limit] if limit else tasks
+        return [Task(task_id="harbor-driver-pending", prompt="", reference="",
+                     metadata={"skip_reason": f"Harbor driver lands in iteration 4 "
+                               f"(agent={self.harbor_agent})"})]
 
     def score(self, output, task):
-        if task.metadata.get("skip_reason"):
-            return Score(passed=False, details=task.metadata["skip_reason"])
-        return Score(passed=False, details="scaffold: tb agent loop lands in iteration 2")
+        return Score(passed=False, details="scaffold: Harbor driver pending")
 
 
 class TbTerminusAdapter(_TerminalBenchBase):
     name = "tb-terminus"
-    description = "Terminal-Bench 2.1 via Terminus-2 harness"
-    source = "terminal-bench 2.1 Terminus-2 harness"
+    description = "Terminal-Bench 2.1 via Terminus-2 harness (Harbor)"
+    source = "harbor run --dataset terminal-bench@2.x --agent terminus-2"
+    harbor_agent = "terminus-2"
 
 
 class TbClaudeAdapter(_TerminalBenchBase):
     name = "tb-claude"
-    description = "Terminal-Bench 2.1 via Claude Code harness"
-    source = "terminal-bench 2.1 Claude Code harness"
+    description = "Terminal-Bench 2.1 via Claude Code harness (Harbor)"
+    source = "harbor run --dataset terminal-bench@2.x --agent claude-code"
+    harbor_agent = "claude-code"

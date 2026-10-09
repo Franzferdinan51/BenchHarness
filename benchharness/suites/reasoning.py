@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 
 from benchharness.schema import Score
-from benchharness.suites.base import Requirement, SuiteAdapter, Task
+from benchharness.suites.base import Requirement, SuiteAdapter, Task, strip_thinking
 
 GPQA_SYSTEM = (
     "You are answering a multiple-choice science question. "
@@ -31,7 +31,7 @@ def _load_hf_dataset(name: str, config: str | None = None):
         from datasets import load_dataset  # type: ignore
     except Exception:
         return None
-    for split in ("test", "train", "validation"):
+    for split in ("test", "train", "validation", "full"):
         try:
             if config:
                 return load_dataset(name, config, split=split)
@@ -95,7 +95,7 @@ class GpqaDiamondAdapter(SuiteAdapter):
         return out[:limit] if limit else out
 
     def score(self, output, task):
-        got = extract_letter(output)
+        got = extract_letter(strip_thinking(output))
         ok = bool(got) and got == task.reference.upper()
         return Score(passed=ok, details=f"got={got!r} want={task.reference!r}")
 
@@ -134,7 +134,7 @@ class HleAdapter(SuiteAdapter):
 
     def score(self, output, task):
         want = normalize_answer(task.reference)
-        got = normalize_answer(output)
+        got = normalize_answer(strip_thinking(output))
         ok = bool(want) and (got == want or want in got)
         return Score(passed=ok, details=f"normalized_match={ok}")
 

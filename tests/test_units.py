@@ -81,6 +81,70 @@ def test_normalize_answer():
     assert normalize_answer("56") == "56"
 
 
+def test_strip_thinking():
+    from benchharness.suites.base import strip_thinking
+    assert strip_thinking("<think>maybe B... no, C</think>Answer: C") == "Answer: C"
+    assert strip_thinking("<THINKING>draft diff --git a/x</THINKING>done") == "done"
+    assert strip_thinking("<think>unclosed trail") == ""
+    assert strip_thinking("plain answer") == "plain answer"
+
+
+def test_think_decoys_ignored_by_scorers():
+    from benchharness.registry import get_suite
+    from benchharness.suites.base import Task
+    gpqa = get_suite("gpqa-diamond")
+    task = Task(task_id="t", prompt="p", reference="C")
+    assert gpqa.score("<think>Answer: A? or B?</think>Final: C", task).passed
+    hle = get_suite("hle")
+    assert hle.score("<think>Paris? London?</think>Paris",
+                     Task(task_id="t", prompt="p", reference="Paris")).passed
+
+
+def test_browsecomp_decrypt_roundtrip():
+    import base64
+    import hashlib
+    from benchharness.suites.agentic import browsecomp_decrypt
+    canary = "BENCHMARK DATA SHOULD NEVER APPEAR IN TRAINING"
+    plain = "What is the airspeed velocity?"
+    digest = hashlib.sha256(canary.encode()).digest()
+    key = digest * (len(plain) // len(digest) + 1)
+    cipher = base64.b64encode(bytes(a ^ b for a, b in
+                                    zip(plain.encode(), key))).decode()
+    assert browsecomp_decrypt(cipher, canary) == plain
+
+
+def test_widesearch_column_recall():
+    from benchharness.registry import get_suite
+    from benchharness.suites.base import Task
+    ws = get_suite("widesearch")
+    ref = '{"required": ["ocean", "area"], "eval_pipeline": {}}'
+    task = Task(task_id="t", prompt="p", reference=ref)
+    good = ws.score("| ocean | area |\n| Pacific | 165M |", task)
+    assert good.passed and good.score == 1.0
+    bad = ws.score("| ocean |\n| Pacific |", task)
+    assert not bad.passed and bad.score == 0.5
+    assert ws.required_columns('["a", "b"]') == ["a", "b"]
+
+
+def test_atlas_rubric_recall():
+    from benchharness.registry import get_suite
+    from benchharness.suites.base import Task
+    atlas = get_suite("swe-atlas-qna")
+    task = Task(task_id="t", prompt="p", reference="",
+                metadata={"rubric": "retry backoff lib"})
+    assert atlas.score("The retry helper with backoff lives in lib.", task).passed
+    assert not atlas.score("Something unrelated entirely.", task).passed
+
+
+def test_mcp_claim_recall():
+    from benchharness.registry import get_suite
+    from benchharness.suites.base import Task
+    mcp = get_suite("mcp-atlas")
+    task = Task(task_id="t", prompt="p",
+                reference="The AssaultCube repository was created in 2013.")
+    assert mcp.score("AssaultCube repository created 2013.", task).passed
+
+
 def test_hf_loader_split_fallback(monkeypatch):
     """Loader tries test -> train -> validation before giving up."""
     import sys
