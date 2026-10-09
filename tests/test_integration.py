@@ -71,15 +71,15 @@ def test_client_auto_model_pick():
 
 
 def test_registry_covers_goal_suites():
-    assert len(REGISTRY) == 18  # 17 goal suites + demo
-    for name in ("tb-terminus", "tb-claude", "swe-verified", "swe-pro",
+    assert len(REGISTRY) == 20  # 19 goal suites + demo
+    for name in ("tb-terminus", "tb-claude", "tb-hermes", "swe-verified", "swe-pro",
                  "swe-multilingual", "deepswe", "frontier-bench", "nl2repo",
                  "swe-atlas-qna", "hle", "hle-tools", "gpqa-diamond",
                  "mcp-atlas", "toolathlon", "widesearch", "browsecomp",
-                 "claweval", "demo"):
+                 "claweval", "hermes-bench", "demo"):
         assert name in REGISTRY, name
-    assert len(list_suites("coding")) == 9
-    assert len(list_suites("agentic")) == 5
+    assert len(list_suites("coding")) == 10
+    assert len(list_suites("agentic")) == 6
 
 
 def test_golden_demo_run(tmp_path, mock_config, monkeypatch):

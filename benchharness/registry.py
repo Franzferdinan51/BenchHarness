@@ -5,6 +5,7 @@ from __future__ import annotations
 from benchharness.suites.agentic import (
     BrowseCompAdapter,
     ClawEvalAdapter,
+    HermesBenchAdapter,
     McpAtlasAdapter,
     ToolathlonAdapter,
     WideSearchAdapter,
@@ -19,6 +20,7 @@ from benchharness.suites.coding import (
     SweProAdapter,
     SweVerifiedAdapter,
     TbClaudeAdapter,
+    TbHermesAdapter,
     TbTerminusAdapter,
 )
 from benchharness.suites.demo import DemoAdapter
@@ -26,11 +28,11 @@ from benchharness.suites.reasoning import GpqaDiamondAdapter, HleAdapter, HleToo
 
 REGISTRY: dict[str, type[SuiteAdapter]] = {}
 for _cls in (
-    TbTerminusAdapter, TbClaudeAdapter, SweVerifiedAdapter, SweProAdapter,
-    SweMultilingualAdapter, DeepSweAdapter, FrontierBenchAdapter, Nl2RepoAdapter,
-    SweAtlasQnaAdapter, GpqaDiamondAdapter, HleAdapter, HleToolsAdapter,
-    McpAtlasAdapter, ToolathlonAdapter, WideSearchAdapter, BrowseCompAdapter,
-    ClawEvalAdapter, DemoAdapter,
+    TbTerminusAdapter, TbClaudeAdapter, TbHermesAdapter, SweVerifiedAdapter,
+    SweProAdapter, SweMultilingualAdapter, DeepSweAdapter, FrontierBenchAdapter,
+    Nl2RepoAdapter, SweAtlasQnaAdapter, GpqaDiamondAdapter, HleAdapter,
+    HleToolsAdapter, McpAtlasAdapter, ToolathlonAdapter, WideSearchAdapter,
+    BrowseCompAdapter, ClawEvalAdapter, HermesBenchAdapter, DemoAdapter,
 ):
     REGISTRY[_cls.name] = _cls
 

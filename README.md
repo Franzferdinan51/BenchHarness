@@ -12,8 +12,10 @@ tools share one setup.
 
 | Suite | Category | Status |
 |---|---|---|
-| `tb-terminus` | coding | scaffold — Harbor driver (`--agent terminus-2`) lands in iteration 4 |
-| `tb-claude` | coding | scaffold — Harbor driver (`--agent claude-code`) lands in iteration 4 |
+| `tb-terminus` | coding | wired — Harbor `--agent terminus-2`, LM Studio-routed via `api_base` |
+| `tb-claude` | coding | wired — Harbor `--agent claude-code` (needs `ANTHROPIC_API_KEY`) |
+| `tb-hermes` | coding | wired — Harbor `--agent hermes` (Hermes-native model config) |
+| `hermes-bench` | agentic | scaffold — Nous HermesIndex suite is closed; `tb-hermes` is the proxy |
 | `swe-verified` | coding | wired — HF dataset + patch scoring (docker FAIL_TO_PASS eval next) |
 | `swe-pro` | coding | wired — `ScaleAI/SWE-bench_Pro` (lowercase fail/pass keys mapped) |
 | `swe-multilingual` | coding | wired — same loader/scorer as swe-verified |

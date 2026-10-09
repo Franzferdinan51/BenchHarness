@@ -314,6 +314,8 @@ class _TerminalBenchBase(SuiteAdapter):
         if self.harbor_agent == "claude-code":
             reqs.append(Requirement("env", "ANTHROPIC_API_KEY",
                                     "Claude Code CLI credential"))
+        if self.harbor_agent == "hermes":
+            reqs.append(Requirement("cli", "hermes", "Hermes Agent CLI"))
         return reqs
 
     def _dataset(self) -> str:
@@ -405,3 +407,17 @@ class TbClaudeAdapter(_TerminalBenchBase):
     description = "Terminal-Bench 2.x via Claude Code harness (Harbor, needs API key)"
     source = "harbor run --dataset terminal-bench@2.x --agent claude-code"
     harbor_agent = "claude-code"
+
+
+class TbHermesAdapter(_TerminalBenchBase):
+    """Terminal-Bench 2.x via the Hermes Agent harness (Harbor `--agent hermes`).
+
+    Model routing is Hermes-native: point the hermes CLI at LM Studio first
+    (`hermes model` / provider config), then the trials use it. No api_base
+    kwarg exists on this agent.
+    """
+
+    name = "tb-hermes"
+    description = "Terminal-Bench 2.x via Hermes Agent harness (Harbor)"
+    source = "harbor run --dataset terminal-bench@2.x --agent hermes"
+    harbor_agent = "hermes"

@@ -225,6 +225,31 @@ class ToolathlonAdapter(SuiteAdapter):
         return Score(passed=False, details="scaffold: env driver pending")
 
 
+class HermesBenchAdapter(SuiteAdapter):
+    """Hermes Bench (Nous HermesIndex suite: 150 tasks, 25 categories).
+
+    As of iteration 6 the official suite has no public runner or task
+    download — it runs inside Hermes Agent via the Nous portal
+    (https://portal.nousresearch.com/bench). Runnable proxies in this
+    harness: tb-hermes (same Hermes Agent harness on Terminal-Bench) and
+    third-party am423/hermes-bench-tool-call (61 local tool-call tasks).
+    """
+
+    name = "hermes-bench"
+    category = "agentic"
+    description = "Hermes Bench (Nous HermesIndex; no public runner yet)"
+    source = "https://portal.nousresearch.com/bench (closed suite)"
+    status = "scaffold"
+
+    def tasks(self, limit=None):
+        return [Task(task_id="no-public-runner", prompt="", reference="",
+                     metadata={"skip_reason": "Hermes Bench has no public "
+                               "runner; use tb-hermes proxy or rerun research"})]
+
+    def score(self, output, task):
+        return Score(passed=False, details="scaffold: no public runner")
+
+
 class ClawEvalAdapter(SuiteAdapter):
     """ClawEval: namespace unresolved (multiple contenders: OpenClaw-style
     personal-assistant tasks in rllm's claw_eval-general/161, deterministic
