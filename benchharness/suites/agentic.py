@@ -200,6 +200,7 @@ class McpAtlasAdapter(SuiteAdapter):
     source = "ScaleAI/MCP-Atlas (500 prompts, 36 MCP servers, 220 tools)"
     status = "wired"
     max_tokens = 4096
+    task_timeout_secs = 6000.0  # agent-mode batch above evalscope timeout
 
     SMOKE = [("smoke-1", "What year was the AssaultCube repo created?",
               "The AssaultCube GitHub repository was created in 2013.")]
@@ -323,6 +324,7 @@ class ToolathlonAdapter(SuiteAdapter):
     description = "Toolathlon-Verified (official remote service, 108 tasks)"
     source = "hkust-nlp/Toolathlon official service via EvalScope toolathlon"
     status = "wired"
+    task_timeout_secs = 6000.0  # above evalscope_timeout_secs
 
     def requirements(self):
         return [Requirement("evalscope", "toolathlon",
@@ -432,6 +434,7 @@ class ClawEvalAdapter(SuiteAdapter):
     description = "Claw-Eval (EvalScope official runner, 300 tasks, Pass³)"
     source = "claw-eval/Claw-Eval on ModelScope via EvalScope claw_eval"
     status = "wired"
+    task_timeout_secs = 6000.0  # above evalscope_timeout_secs
 
     def requirements(self):
         return [Requirement("pip", "modelscope", "ModelScope snapshot", soft=True),

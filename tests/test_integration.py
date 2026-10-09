@@ -203,6 +203,72 @@ def test_per_task_timeout_records_error(tmp_path, mock_config, monkeypatch):
     assert summary.total == 2
 
 
+def test_adapter_task_timeout_overrides_global(tmp_path, mock_config, monkeypatch):
+    import httpx
+    import benchharness.runner as runner_mod
+    from benchharness.schema import read_results
+
+    class MockClient(runner_mod.LMStudioClient):
+        def __init__(self, config):
+            super().__init__(config, transport=make_transport("PINEAPPLE"))
+
+    monkeypatch.setattr(runner_mod, "LMStudioClient", MockClient)
+    mock_config.out_dir = tmp_path / "bench-results"
+    mock_config.per_task_timeout_secs = 300.0
+    adapter = get_suite("tb-terminus")
+    assert adapter.task_timeout_secs and adapter.task_timeout_secs > 600
+    run_dir, _ = run_suites(["demo"], mock_config)
+    # demo has no override: global budget applies, mock answers fast
+    assert all(r.status == "done" for r in read_results(run_dir / "results.jsonl"))
+
+
+def test_adapter_small_budget_times_out_fast(tmp_path, mock_config, monkeypatch):
+    import time
+    import httpx
+    import benchharness.runner as runner_mod
+    from benchharness.schema import read_results
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        time.sleep(3)
+        return httpx.Response(200, json={"choices": []})
+
+    class MockClient(runner_mod.LMStudioClient):
+        def __init__(self, config):
+            super().__init__(config, transport=httpx.MockTransport(handler))
+
+    class SlowSuite:
+        name = "demo"
+        max_tokens = 16
+        task_timeout_secs = 0.2
+
+        def tasks(self, limit=None):
+            from benchharness.suites.base import Task
+            return [Task(task_id="t1", prompt="hi", reference="")]
+
+        def missing_requirements(self, hard_only=False):
+            return []
+
+        def prepare(self, workdir):
+            pass
+
+        def messages(self, task):
+            return [{"role": "user", "content": task.prompt}]
+
+        def score(self, output, task):
+            from benchharness.schema import Score
+            return Score(passed=True)
+
+    monkeypatch.setattr(runner_mod, "LMStudioClient", MockClient)
+    monkeypatch.setattr(runner_mod, "get_suite", lambda name: SlowSuite())
+    mock_config.out_dir = tmp_path / "bench-results"
+    mock_config.per_task_timeout_secs = 300.0  # adapter budget must win
+    started = time.monotonic()
+    run_dir, summary = run_suites(["demo"], mock_config)
+    assert time.monotonic() - started < 10
+    assert summary.errors == 1
+    assert "timeout after 0.2s" in read_results(run_dir / "results.jsonl")[0].error
+
+
 def test_judge_path_overrides_heuristic(mock_config):
     import httpx
     import json as _json

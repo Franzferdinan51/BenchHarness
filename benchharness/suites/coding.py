@@ -176,6 +176,7 @@ class SweProAdapter(SuiteAdapter):
     source = "github.com/scaleapi/SWE-bench_Pro-os v2/tasks + ScaleAI/SWE-bench_Pro"
     status = "wired"
     harbor_agent = "terminus-2"
+    task_timeout_secs = 2400.0  # above harbor_timeout_secs + image pulls
     repo_url = "https://github.com/scaleapi/SWE-bench_Pro-os"
 
     def requirements(self):
@@ -319,6 +320,7 @@ class DeepSweAdapter(SuiteAdapter):
     description = "DeepSWE (EvalScope Pier agent, 113 tasks, verifier acc)"
     source = "evalscope/deep-swe on ModelScope via EvalScope deep_swe"
     status = "wired"
+    task_timeout_secs = 6000.0  # above evalscope_timeout_secs
 
     def requirements(self):
         return [
@@ -410,6 +412,7 @@ class Nl2RepoAdapter(SuiteAdapter):
     description = "NL2Repo (AweAI-Team/AweAgent-Meta-NL2Repo, shell agent + verify)"
     source = "AweAI-Team/AweAgent-Meta-NL2Repo"
     status = "wired"
+    task_timeout_secs = 1800.0  # 20-turn shell-agent loop + verifier
     max_tokens = 16384
     agent_turns = 20
 
@@ -555,6 +558,7 @@ class _TerminalBenchBase(SuiteAdapter):
     category = "coding"
     status = "wired"
     harbor_agent = ""
+    task_timeout_secs = 2400.0  # above harbor_timeout_secs + image pulls
 
     def requirements(self):
         reqs = [

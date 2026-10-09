@@ -69,6 +69,9 @@ class SuiteAdapter(ABC):
     category: str = ""  # coding | reasoning | agentic
     description: str = ""
     max_tokens: int = 2048
+    # Per-task wall-clock budget override (None = config default).
+    # Long external-agent suites set this above their inner timeouts.
+    task_timeout_secs: float | None = None
 
     def requirements(self) -> list[Requirement]:
         return []

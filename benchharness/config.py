@@ -130,7 +130,10 @@ class BenchConfig:
             cfg.judge_enabled = bool(run.get("judge", False))
         mt = _nonblank(os.environ.get("BENCH_MAX_TOKENS")) or run.get("max_tokens")
         cfg.max_tokens_override = int(mt) if mt is not None else None
-        cfg.per_task_timeout_secs = float(run.get("per_task_timeout_secs", 600.0))
+        cfg.per_task_timeout_secs = float(
+            os.environ.get("BENCH_PER_TASK_TIMEOUT",
+                           run.get("per_task_timeout_secs", 600.0))
+        )
         out = run.get("out_dir", "bench-results")
         cfg.out_dir = Path(out)
 

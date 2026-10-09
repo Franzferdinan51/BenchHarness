@@ -210,34 +210,51 @@ def run_suites(
             return res
 
         # httpx.Client is thread-safe for distinct requests; bound the pool.
-        # Each task gets config.per_task_timeout_secs wall-clock (covers all
-        # LM retries); overruns are recorded as timeout errors, not hangs.
+        # Each task gets wall-clock budget: adapter.task_timeout_secs when
+        # the suite sets one (long external-agent runs), else
+        # config.per_task_timeout_secs. Overruns are recorded as timeout
+        # errors, not hangs.
         pending: dict = {}
+        deadlines: dict = {}
+        budgets: dict = {}
         pool = ThreadPoolExecutor(max_workers=max(1, config.jobs))
         timed_out = False
         try:
+            started_all = time.monotonic()
             for item in work:
-                pending[pool.submit(_one, item)] = item
+                adapter = item[0]
+                budget = getattr(adapter, "task_timeout_secs", None) or \
+                    config.per_task_timeout_secs
+                fut = pool.submit(_one, item)
+                pending[fut] = item
+                budgets[fut] = budget
+                deadlines[fut] = started_all + budget
             while pending:
-                done, _ = wait(list(pending), timeout=config.per_task_timeout_secs,
+                now = time.monotonic()
+                wait_for = max(0.05, min(deadlines[f] for f in pending) - now)
+                done, _ = wait(list(pending), timeout=wait_for,
                                return_when=FIRST_COMPLETED)
-                if not done:
-                    timed_out = True
-                    for fut, (adapter, task) in list(pending.items()):
-                        fut.cancel()
-                        res = TaskResult(
-                            run_id=run_id, model=model, suite=adapter.name,
-                            task_id=task.task_id, passed=False, status="error",
-                            error=f"timeout after {config.per_task_timeout_secs:g}s",
-                        )
-                        results.append(res)
-                        append_result(results_path, res)
-                    pending.clear()
-                    break
                 for fut in done:
                     results.append(fut.result())
                     append_result(results_path, results[-1])
                     del pending[fut]
+                    del deadlines[fut]
+                    del budgets[fut]
+                now = time.monotonic()
+                for fut, (adapter, task) in list(pending.items()):
+                    if now >= deadlines[fut]:
+                        timed_out = True
+                        fut.cancel()
+                        res = TaskResult(
+                            run_id=run_id, model=model, suite=adapter.name,
+                            task_id=task.task_id, passed=False, status="error",
+                            error=f"timeout after {budgets[fut]:g}s",
+                        )
+                        results.append(res)
+                        append_result(results_path, res)
+                        del pending[fut]
+                        del deadlines[fut]
+                        del budgets[fut]
         finally:
             # On timeout, don't let straggler threads hold the run hostage;
             # each is still bounded by the httpx request timeout + retries.
