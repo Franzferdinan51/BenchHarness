@@ -493,8 +493,8 @@ class FrontierBenchAdapter(SuiteAdapter):
 class Nl2RepoAdapter(SuiteAdapter):
     """NL2Repo (AweAI-Team/AweAgent-Meta-NL2Repo): build a repo from an NL spec.
 
-    Custom shell-agent loop + per-task verify_cmd grading (container
-    mechanics validated live; full agent trial deferred to GPU-free).
+    Custom shell-agent loop + per-task verify_cmd grading (proven live:
+    20-turn loop, verify exit mapping, transcript.json per task).
     The official nl2repobench/nl2repobench Harbor set (104 tasks) is
     NOT usable: every tester sidecar image sits on a private GCP
     Artifact Registry (Unauthenticated 403). Revisit if the publisher
@@ -551,6 +551,8 @@ class Nl2RepoAdapter(SuiteAdapter):
         return Score(passed=False, details="nl2repo agent trial (see run_external)")
 
     def run_external(self, task, ctx):
+        import json as _json
+
         from benchharness.agent_loop import docker_shell_loop
 
         image = task.metadata.get("image", "")
@@ -571,18 +573,40 @@ class Nl2RepoAdapter(SuiteAdapter):
             verify = shell.exec(verify_cmd, timeout_secs=600.0) if verify_cmd else None
         finally:
             shell.stop()
+        workdir = Path(ctx.get("workdir", "."))
+        workdir.mkdir(parents=True, exist_ok=True)
+        safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", task.task_id)[:60]
+        (workdir / f"transcript-{safe_id}.json").write_text(
+            _json.dumps(
+                {
+                    "turns": transcript.turns,
+                    "capped": transcript.capped,
+                    "commands": transcript.commands,
+                    "final_text": transcript.final_text[:2000],
+                    "prompt_tokens": transcript.prompt_tokens,
+                    "completion_tokens": transcript.completion_tokens,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
         if verify is None:
             return "", Score(
                 passed=False,
                 details=f"no verify_cmd; agent ran {transcript.turns} turns",
+                prompt_tokens=transcript.prompt_tokens,
+                completion_tokens=transcript.completion_tokens,
             )
         ok = verify.exit_code == 0
+        cmd_lines = "\n".join(f"$ {c}" for c in transcript.commands[-8:])
         tail = (verify.stdout + "\n" + verify.stderr)[-600:]
-        return tail, Score(
+        return f"{cmd_lines}\n--- verify ---\n{tail}", Score(
             passed=ok,
             score=1.0 if ok else 0.0,
             details=f"verify exit={verify.exit_code} after {transcript.turns} "
             f"turns{' (capped)' if transcript.capped else ''}",
+            prompt_tokens=transcript.prompt_tokens,
+            completion_tokens=transcript.completion_tokens,
         )
 
 

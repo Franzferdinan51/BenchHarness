@@ -136,3 +136,69 @@ def test_nl2repo_verify_mapping(tmp_path, monkeypatch):
         raise AssertionError("expected RuntimeError")
     except RuntimeError as exc:
         assert "evaluation_image" in str(exc)
+
+
+def test_nl2repo_persists_transcript_and_tokens(tmp_path, monkeypatch):
+    import json
+
+    import benchharness.agent_loop as loop_mod
+    from benchharness.registry import get_suite
+    from benchharness.suites.base import Task
+
+    class FakeShell:
+        def exec(self, cmd, timeout_secs=0):
+            return ExecResult(0, "ok", "")
+
+        def stop(self):
+            pass
+
+    def fake_loop(client, model, image, prompt, max_turns=0, max_tokens=0):
+        t = AgentTranscript(
+            turns=2,
+            commands=["ls", "pwd"],
+            final_text="done",
+            prompt_tokens=11,
+            completion_tokens=22,
+        )
+        return t, FakeShell()
+
+    monkeypatch.setattr(loop_mod, "docker_shell_loop", fake_loop)
+    task = Task(
+        task_id="t",
+        prompt="build",
+        reference="",
+        metadata={"image": "img:1", "verify_cmd": "true"},
+    )
+    excerpt, score = get_suite("nl2repo").run_external(
+        task,
+        {
+            "model": "m",
+            "config": None,
+            "run_id": "r",
+            "workdir": tmp_path,
+            "client": object(),
+        },
+    )
+    assert score.passed
+    assert (score.prompt_tokens, score.completion_tokens) == (11, 22)
+    assert "$ ls" in excerpt and "--- verify ---" in excerpt
+    saved = json.loads((tmp_path / "transcript-t.json").read_text())
+    assert saved["commands"] == ["ls", "pwd"] and saved["turns"] == 2
+
+
+def test_external_tokens_reach_result(tmp_path):
+    from benchharness.runner import evaluate_task
+    from benchharness.schema import Score
+    from benchharness.suites.base import Task
+
+    class ExtSuite:
+        name = "ext"
+
+        def run_external(self, task, ctx):
+            return "out", Score(passed=True, prompt_tokens=5, completion_tokens=7)
+
+    res = evaluate_task(
+        None, ExtSuite(), Task(task_id="t", prompt="p"), "m", "r", None, tmp_path
+    )
+    assert (res.prompt_tokens, res.completion_tokens) == (5, 7)
+    assert res.passed

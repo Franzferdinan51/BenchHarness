@@ -103,6 +103,8 @@ def evaluate_task(
                     passed=score.passed,
                     score=score.score,
                     latency_ms=int((time.monotonic() - started) * 1000),
+                    prompt_tokens=getattr(score, "prompt_tokens", 0) or 0,
+                    completion_tokens=getattr(score, "completion_tokens", 0) or 0,
                     details=score.details,
                     output_excerpt=(excerpt or "")[:500],
                 )

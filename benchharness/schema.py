@@ -21,6 +21,10 @@ class Score:
     passed: bool
     score: float = 0.0  # 0.0..1.0, suite-defined partial credit allowed
     details: str = ""
+    # Token usage for external-agent paths (run_external); the chat path
+    # fills TaskResult directly, so these stay 0 there.
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
     def __post_init__(self) -> None:
         self.score = min(1.0, max(0.0, float(self.score)))

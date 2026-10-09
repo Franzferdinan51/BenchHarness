@@ -75,3 +75,14 @@ verdict, tokens, notes.
 - browsecomp/browsecomp-0 containment=False (4.3s, real decrypted row).
 - swe-atlas-qna real rubric task: recall 8/99 (2.5s).
 - All genuine scored results; no errors, no infra issues.
+
+## 2026-10-09 — nl2repo / schema — FAIL (verify exit 127, capped at 20 turns)
+
+- Model: `duckbot-ornith-1.5-35b-a3b-mlx@8bit`, sequential, 35.8s loop.
+- Verdict: FAIL. Agent ran all 20 turns but the repo never reached a
+  verifiable state (exit 127). Late turns degenerated (e.g. a markdown
+  list executed as a shell command).
+- Harness fix (Iteration 27): run_external now persists
+  `transcript-<task>.json` (turns/commands/tokens) to the workdir and
+  includes recent commands in the result excerpt; Score carries
+  prompt/completion tokens through to TaskResult (was 0/0).
