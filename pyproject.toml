@@ -13,6 +13,7 @@ dependencies = [
 [project.optional-dependencies]
 datasets = ["datasets>=2.14", "huggingface-hub>=0.20"]
 swe = ["swebench>=3.0", "datasets>=2.14"]
+claw = ["modelscope>=1.30", "addict>=2.4", "datasets>=2.14"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]

@@ -213,9 +213,12 @@ class DeepSweAdapter(SuiteAdapter):
 
 
 class FrontierBenchAdapter(SuiteAdapter):
-    """Frontier-Bench v0.1: agentic terminal coding (Anthropic-reported SOTA
-    numbers exist, e.g. Opus 5 at 43.3%, but no public dataset or harness
-    was found as of iteration 3). Stays scaffold until a source appears."""
+    """Frontier-Bench v0.1: Anthropic-reported agentic coding numbers (Opus 5
+    at 43.3%) with no public dataset or harness as of iteration 10.
+    Aggregators tie it to the Harbor/TB team line (frontierbench.ai now
+    redirects to tbench.ai; TB 4.0 is the live successor), but no
+    CLI-downloadable Frontier dataset exists. Stays scaffold; re-check
+    the Harbor registry + tbench.ai each iteration."""
 
     name = "frontier-bench"
     category = "coding"
@@ -352,7 +355,7 @@ class SweAtlasQnaAdapter(SuiteAdapter):
 
 
 class _TerminalBenchBase(SuiteAdapter):
-    """Terminal-Bench 2.x through Harbor, one `harbor run` trial per task.
+    """Terminal-Bench 2.1 through Harbor, one `harbor run` trial per task.
 
     Both adapters share the task set; the `--agent` harness differs.
     terminus-2 routes to local LM Studio via `--ak api_base=...`; the
@@ -379,9 +382,9 @@ class _TerminalBenchBase(SuiteAdapter):
     def _dataset(self) -> str:
         import os as _os
 
-        # 2.1 is not in the public Harbor registry yet; override with
-        # TB_DATASET=terminal-bench@2.1 when it publishes.
-        return _os.environ.get("TB_DATASET", "terminal-bench@2.0")
+        # Registry form is org/name; legacy terminal-bench@2.0 still works
+        # via TB_DATASET override.
+        return _os.environ.get("TB_DATASET", "terminal-bench/terminal-bench-2-1")
 
     def prepare(self, workdir: Path) -> None:
         from benchharness.harbor_driver import ensure_dataset
@@ -389,12 +392,13 @@ class _TerminalBenchBase(SuiteAdapter):
         ensure_dataset(self._dataset())
 
     def tasks(self, limit=None):
-        from benchharness.harbor_driver import default_cache_dir, list_tasks
+        from benchharness.harbor_driver import (
+            dataset_dir_name,
+            default_cache_dir,
+            list_tasks,
+        )
 
-        from benchharness.harbor_driver import dataset_name_version
-
-        name, _ = dataset_name_version(self._dataset())
-        names = list_tasks(default_cache_dir() / name)
+        names = list_tasks(default_cache_dir() / dataset_dir_name(self._dataset()))
         out = [Task(task_id=n, prompt=f"Terminal-Bench task: {n}", reference="",
                     metadata={"harbor_task": n, "harbor_dataset": self._dataset()})
                for n in names]
@@ -444,9 +448,17 @@ class _TerminalBenchBase(SuiteAdapter):
             if _os.environ.get("ANTHROPIC_API_KEY"):
                 agent_env["ANTHROPIC_API_KEY"] = _os.environ["ANTHROPIC_API_KEY"]
 
+        dataset = self._dataset()
+        bare = task.metadata.get("harbor_task", task.task_id)
+        # org/name datasets need qualified filters (terminal-bench/<task>);
+        # legacy name@version datasets take bare names.
+        if "/" in dataset and "/" not in bare:
+            include = f"{dataset.split('@')[0].split('/')[0]}/{bare}"
+        else:
+            include = bare
         cmd = build_run_command(
-            self._dataset(), agent, harbor_model, jobs_dir, job_name,
-            include_task=task.metadata.get("harbor_task", task.task_id),
+            dataset, agent, harbor_model, jobs_dir, job_name,
+            include_task=include,
             n_tasks=1,
             agent_kwargs=agent_kwargs, agent_env=agent_env,
             memory_policy=memory,
@@ -466,20 +478,20 @@ class _TerminalBenchBase(SuiteAdapter):
 
 class TbTerminusAdapter(_TerminalBenchBase):
     name = "tb-terminus"
-    description = "Terminal-Bench 2.x via Terminus-2 harness (Harbor, LM Studio-routed)"
-    source = "harbor run --dataset terminal-bench@2.x --agent terminus-2"
+    description = "Terminal-Bench 2.1 via Terminus-2 harness (Harbor, LM Studio-routed)"
+    source = "harbor run --dataset terminal-bench-2-1 --agent terminus-2"
     harbor_agent = "terminus-2"
 
 
 class TbClaudeAdapter(_TerminalBenchBase):
     name = "tb-claude"
-    description = "Terminal-Bench 2.x via Claude Code harness (Harbor, needs API key)"
-    source = "harbor run --dataset terminal-bench@2.x --agent claude-code"
+    description = "Terminal-Bench 2.1 via Claude Code harness (Harbor, needs API key)"
+    source = "harbor run --dataset terminal-bench-2-1 --agent claude-code"
     harbor_agent = "claude-code"
 
 
 class TbHermesAdapter(_TerminalBenchBase):
-    """Terminal-Bench 2.x via the Hermes Agent harness (Harbor `--agent hermes`).
+    """Terminal-Bench 2.1 via the Hermes Agent harness (Harbor `--agent hermes`).
 
     Model routing is Hermes-native: point the hermes CLI at LM Studio first
     (`hermes model` / provider config), then the trials use it. No api_base
@@ -487,6 +499,6 @@ class TbHermesAdapter(_TerminalBenchBase):
     """
 
     name = "tb-hermes"
-    description = "Terminal-Bench 2.x via Hermes Agent harness (Harbor)"
-    source = "harbor run --dataset terminal-bench@2.x --agent hermes"
+    description = "Terminal-Bench 2.1 via Hermes Agent harness (Harbor)"
+    source = "harbor run --dataset terminal-bench-2-1 --agent hermes"
     harbor_agent = "hermes"

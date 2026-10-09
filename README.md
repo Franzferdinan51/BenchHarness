@@ -12,15 +12,15 @@ tools share one setup.
 
 | Suite | Category | Status |
 |---|---|---|
-| `tb-terminus` | coding | wired — Harbor `--agent terminus-2`, LM Studio-routed (oracle-validated live) |
-| `tb-claude` | coding | wired — Harbor `--agent claude-code` (needs `ANTHROPIC_API_KEY`) |
-| `tb-hermes` | coding | wired — Harbor `--agent hermes` (Hermes-native model config) |
+| `tb-terminus` | coding | wired — TB 2.1 Harbor `--agent terminus-2`, LM Studio-routed (oracle PASS live) |
+| `tb-claude` | coding | wired — TB 2.1 Harbor `--agent claude-code` (needs `ANTHROPIC_API_KEY`) |
+| `tb-hermes` | coding | wired — TB 2.1 Harbor `--agent hermes` (Hermes-native model config) |
 | `hermes-bench` | agentic | scaffold — Nous HermesIndex suite is closed; `tb-hermes` is the proxy |
 | `swe-verified` | coding | wired — official docker FAIL_TO_PASS eval (gold-validated; heuristic fallback) |
 | `swe-pro` | coding | wired — `ScaleAI/SWE-bench_Pro` (lowercase fail/pass keys mapped) |
 | `swe-multilingual` | coding | wired — official docker eval when available, else heuristic |
 | `deepswe` | coding | scaffold — `datacurve/deep-swe` is gated; Harbor verifiers in iteration 4 |
-| `frontier-bench` | coding | scaffold — no public dataset/harness found yet |
+| `frontier-bench` | coding | scaffold — Anthropic-reported, no public artifact (TB4 line tracked) |
 | `nl2repo` | coding | scaffold — real task list; docker build+verify loop in iteration 4 |
 | `swe-atlas-qna` | coding | wired — `ScaleAI/SWE-Atlas-QnA`, rubric-keyword recall (LLM judge next) |
 | `hle` | reasoning | wired — `cais/hle`, normalized-answer grading |
@@ -30,7 +30,7 @@ tools share one setup.
 | `toolathlon` | agentic | scaffold — app-env driver in iteration 4 (`hkust-nlp/Toolathlon`) |
 | `widesearch` | agentic | wired — `ByteDance-Seed/WideSearch`, column recall (cell judge next) |
 | `browsecomp` | agentic | wired — decrypted `smolagents/browse_comp`, containment (LLM grader next) |
-| `claweval` | agentic | scaffold — source candidates unresolved, needs follow-up research |
+| `claweval` | agentic | scaffold — Claw-Eval (ModelScope, 161 tasks) enumerated; sandbox driver next |
 | `demo` | reasoning | wired golden suite (2 tasks, no deps) |
 
 `wired` suites run end-to-end today. Without the optional `datasets` package
@@ -60,8 +60,9 @@ Terminal-Bench notes (validated live on Apple Silicon + Colima):
   `BENCH_HARBOR_MEMORY`).
 - Keep `--out` under `$HOME`: Colima bind mounts don't propagate `/tmp`,
   so rewards never download from jobs run there (the harness warns).
-- Public Harbor registry serves `terminal-bench@2.0` (89 tasks); 2.1
-  isn't published there yet — set `TB_DATASET=terminal-bench@2.1` when it is.
+- Default dataset is `terminal-bench/terminal-bench-2-1` (89 tasks,
+  org/name registry form, oracle-validated live); legacy
+  `terminal-bench@2.0` via `TB_DATASET` override.
 - `BENCH_HARBOR_AGENT=oracle` runs golden solutions with zero LM calls —
   the recommended smoke test for the TB path.
 - `tb-claude` needs `ANTHROPIC_API_KEY` (Claude Code CLI); `tb-hermes`

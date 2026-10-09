@@ -155,6 +155,22 @@ def test_atlas_rubric_recall():
     assert not atlas.score("Something unrelated entirely.", task).passed
 
 
+def test_claweval_enumerates_with_defer(monkeypatch):
+    import benchharness.suites.agentic as agentic_mod
+    from benchharness.registry import get_suite
+
+    rows = [{"task_id": "T001", "query": "triage email", "fixture": "f",
+             "language": "en", "category": "communication"}]
+    monkeypatch.setattr(agentic_mod, "_load_claweval_rows", lambda: rows)
+    tasks = get_suite("claweval").tasks()
+    assert len(tasks) == 1 and tasks[0].task_id == "T001"
+    assert "skip_reason" in tasks[0].metadata  # defers, no model burn
+
+    monkeypatch.setattr(agentic_mod, "_load_claweval_rows", lambda: None)
+    tasks = get_suite("claweval").tasks()
+    assert tasks[0].metadata["skip_reason"].startswith("Claw-Eval snapshot")
+
+
 def test_mcp_claim_recall():
     from benchharness.registry import get_suite
     from benchharness.suites.base import Task

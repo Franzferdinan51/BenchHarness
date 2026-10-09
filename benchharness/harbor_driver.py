@@ -2,9 +2,9 @@
 jobs and maps Harbor TrialResults onto BenchHarness TaskResults.
 
 Verified against harbor (harbor-framework/harbor, pip-installable):
-- datasets: terminal-bench@2.0 in the public registry (89 tasks). 2.1 is
-  NOT publicly downloadable as of iteration 5 — the version stays
-  configurable (TB_DATASET / --tb-dataset) so 2.1 works when published.
+- datasets: terminal-bench/terminal-bench-2-1 in the public registry
+  (89 tasks, org/name form). Legacy terminal-bench@2.0 stays available
+  via TB_DATASET override.
 - agents: terminus-2 takes `--ak api_base=<url>` + litellm `-m openai/<id>`
   so it runs against local LM Studio. claude-code shells to the Claude
   Code CLI and needs ANTHROPIC_API_KEY (or an ANTHROPIC_BASE_URL shim).
@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-DEFAULT_DATASET = "terminal-bench@2.0"
+DEFAULT_DATASET = "terminal-bench/terminal-bench-2-1"
 ORACLE_AGENT = "oracle"
 
 
@@ -45,13 +45,18 @@ def dataset_name_version(dataset: str) -> tuple[str, str]:
     return dataset, ""
 
 
+def dataset_dir_name(dataset: str) -> str:
+    """Local directory Harbor exports to: last path segment, no version."""
+    name, _ = dataset_name_version(dataset)
+    return name.rsplit("/", 1)[-1]
+
+
 def ensure_dataset(dataset: str, cache_dir: Path | None = None,
                    timeout_secs: float = 300.0) -> Path:
     """Download (if needed) and return the local dataset directory."""
     cache = cache_dir or default_cache_dir()
     cache.mkdir(parents=True, exist_ok=True)
-    name, _ = dataset_name_version(dataset)
-    dest = cache / name
+    dest = cache / dataset_dir_name(dataset)
     if dest.is_dir() and any(dest.iterdir()):
         return dest
     cmd = ["harbor", "download", dataset, "-o", str(cache)]

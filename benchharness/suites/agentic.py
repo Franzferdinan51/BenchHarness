@@ -259,22 +259,56 @@ class HermesBenchAdapter(SuiteAdapter):
         return Score(passed=False, details="scaffold: no public runner")
 
 
+def _load_claweval_rows():
+    """Raw rows from the ModelScope snapshot (bypasses the SDK builder,
+    which is incompatible with datasets>=3). Returns None when offline."""
+    try:
+        from modelscope import snapshot_download  # type: ignore
+    except Exception:
+        return None
+    try:
+        root = snapshot_download("claw-eval/Claw-Eval", repo_type="dataset")
+        from datasets import load_dataset  # type: ignore
+        return load_dataset("parquet",
+                            data_files=f"{root}/data/general-00000-of-00001.parquet",
+                            split="train")
+    except Exception:
+        return None
+
+
 class ClawEvalAdapter(SuiteAdapter):
-    """ClawEval: namespace unresolved (multiple contenders: OpenClaw-style
-    personal-assistant tasks in rllm's claw_eval-general/161, deterministic
-    role tasks in riverflowfoundation/claweval, AIcell/Auto-ClawEval).
-    Needs a follow-up to pin the Ornith-card ClawEval source."""
+    """Claw-Eval (claw-eval/Claw-Eval on ModelScope): 300 human-verified
+    personal-assistant tasks (161 general), graded Pass³ over fixture
+    sandboxes. Task enumeration is real; the fixture-sandbox + Pass³
+    driver lands next, so tasks defer without burning model calls."""
 
     name = "claweval"
     category = "agentic"
-    description = "ClawEval (source candidates unresolved)"
-    source = "unresolved: rllm claw_eval vs riverflowfoundation/claweval vs AIcell"
+    description = "Claw-Eval (ModelScope, 161 general tasks, sandbox driver pending)"
+    source = "claw-eval/Claw-Eval on ModelScope (general/multimodal/multi_turn)"
     status = "scaffold"
 
+    def requirements(self):
+        return [Requirement("pip", "modelscope", "ModelScope snapshot", soft=True),
+                Requirement("pip", "datasets", "parquet reader", soft=True),
+                Requirement("cli", "docker", "fixture sandboxes")]
+
     def tasks(self, limit=None):
-        return [Task(task_id="source-unresolved", prompt="", reference="",
-                     metadata={"skip_reason": "ClawEval source needs follow-up "
-                               "research to pin the right dataset"})]
+        rows = _load_claweval_rows()
+        if rows is None:
+            return [Task(task_id="missing-data", prompt="", reference="",
+                         metadata={"skip_reason": "Claw-Eval snapshot unavailable; "
+                                   "pip install modelscope + network"})]
+        out = [Task(
+            task_id=str(r.get("task_id", i)),
+            prompt=str(r.get("query", "")),
+            reference="",
+            metadata={"skip_reason": "fixture sandbox + Pass³ driver lands next",
+                      "category": str(r.get("category", "")),
+                      "language": str(r.get("language", "")),
+                      "fixture": str(r.get("fixture", ""))},
+        ) for i, r in enumerate(rows)]
+        return out[:limit] if limit else out
 
     def score(self, output, task):
-        return Score(passed=False, details="scaffold: source unresolved")
+        return Score(passed=False, details="scaffold: sandbox driver pending")

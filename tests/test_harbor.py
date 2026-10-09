@@ -62,6 +62,35 @@ def test_tb_agent_override_oracle(tmp_path, monkeypatch):
     joined = " ".join(seen["cmd"])
     assert "-a oracle" in joined and "api_base" not in joined
     assert "--memory ignore" in joined  # default policy from config
+    # org/name datasets qualify the task filter
+    assert "terminal-bench/t" in joined.split("-i")[1]
+
+
+def test_tb_legacy_dataset_uses_bare_filter(tmp_path, monkeypatch):
+    from benchharness.config import BenchConfig
+    from benchharness.registry import get_suite
+    from benchharness.suites.base import Task
+
+    monkeypatch.setenv("TB_DATASET", "terminal-bench@2.0")
+    seen: dict = {}
+
+    def fake_run_job(cmd, timeout, env=None):
+        seen["cmd"] = cmd
+        return 0, "tail"
+
+    def fake_parse(job_dir):
+        from benchharness.harbor_driver import TrialOutcome
+        return [TrialOutcome(task_name="t", passed=True, score=1.0)]
+
+    import benchharness.harbor_driver as driver
+    monkeypatch.setattr(driver, "run_job", fake_run_job)
+    monkeypatch.setattr(driver, "parse_job_dir", fake_parse)
+    get_suite("tb-terminus").run_external(
+        Task(task_id="t", prompt="", reference="", metadata={"harbor_task": "t"}),
+        {"model": "m", "config": BenchConfig(model="m"), "run_id": "r",
+         "workdir": tmp_path})
+    after_i = " ".join(seen["cmd"]).split("-i")[1]
+    assert "terminal-bench/t" not in after_i and " t " in after_i
 
 
 def _trial(tmp_path, name, **fields):
@@ -100,6 +129,21 @@ def test_parse_job_dir_collects_trials(tmp_path):
     assert len(outcomes) == 2
     assert outcomes[0].task_name == "chess-best-move"
     assert parse_job_dir(tmp_path / "nope") == []
+
+
+def test_dataset_dir_name_forms():
+    from benchharness.harbor_driver import dataset_dir_name
+    assert dataset_dir_name("terminal-bench/terminal-bench-2-1") == "terminal-bench-2-1"
+    assert dataset_dir_name("terminal-bench/terminal-bench-2-1@latest") == "terminal-bench-2-1"
+    assert dataset_dir_name("terminal-bench@2.0") == "terminal-bench"
+
+
+def test_tb_default_dataset_is_21(monkeypatch):
+    from benchharness.registry import get_suite
+    monkeypatch.delenv("TB_DATASET", raising=False)
+    assert get_suite("tb-terminus")._dataset() == "terminal-bench/terminal-bench-2-1"
+    monkeypatch.setenv("TB_DATASET", "terminal-bench@2.0")
+    assert get_suite("tb-terminus")._dataset() == "terminal-bench@2.0"
 
 
 def test_list_tasks_from_task_toml(tmp_path):
