@@ -314,7 +314,7 @@ class DeepSweAdapter(SuiteAdapter):
 
     name = "deepswe"
     category = "coding"
-    description = "DeepSWE (EvalScope Pier agent, 117 tasks, verifier acc)"
+    description = "DeepSWE (EvalScope Pier agent, 113 tasks, verifier acc)"
     source = "evalscope/deep-swe on ModelScope via EvalScope deep_swe"
     status = "wired"
 

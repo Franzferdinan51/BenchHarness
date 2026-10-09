@@ -19,7 +19,7 @@ tools share one setup.
 | `swe-verified` | coding | wired — official docker FAIL_TO_PASS eval (gold-validated; heuristic fallback) |
 | `swe-pro` | coding | wired — Pro V2 Harbor tasks (`harbor run -p v2/tasks`, oracle PASS live; amd64 pre-pull on ARM) |
 | `swe-multilingual` | coding | wired — official docker eval when available, else heuristic |
-| `deepswe` | coding | wired — EvalScope Pier agent on `evalscope/deep-swe` (113 tasks, verifier acc; live trial deferred to GPU-free) |
+| `deepswe` | coding | wired — EvalScope Pier agent on `evalscope/deep-swe` (113 tasks, verifier acc; path proven end-to-end, live LM trial deferred to GPU-free) |
 | `frontier-bench` | coding | scaffold — Anthropic-reported, no public artifact (TB4 line tracked) |
 | `nl2repo` | coding | wired — shell-agent loop in per-task image + `verify_cmd` grading |
 | `swe-atlas-qna` | coding | wired — `ScaleAI/SWE-Atlas-QnA`, rubric-keyword recall (LLM judge next) |
@@ -81,7 +81,19 @@ trials deferred until the GPU is free):
   (override the interpreter with `BENCH_EVALSCOPE_PYTHON`).
 - Agent and LLM judge both point at LM Studio (`--api-url` /
   judge `api_url`); DeepSWE uses the litellm model class for
-  OpenAI-compatible endpoints.
+  OpenAI-compatible endpoints, with the model sent as
+  `openai/<name>` plus `OPENAI_API_BASE`/`OPENAI_API_KEY` into the
+  agent container (localhost rewritten to `host.docker.internal`;
+  override with `BENCH_CONTAINER_HOST`).
+- DeepSWE note: Pier's egress proxy only allows ports 80/443, so the
+  driver flips `allow_internet` on the EvalScope-cached snapshot at
+  run time (the store self-restores edits, hence the wrap) to give
+  the agent direct egress to local endpoints. The verifier runs
+  unchanged. Set `BENCH_DEEPSWE_ALLOW_INTERNET=0` for the locked
+  protocol (local endpoints then unreachable).
+- Keep `--out` under `$HOME` for EvalScope suites too: Colima bind
+  mounts don't propagate `/tmp`, so reward files never download
+  back (the harness warns).
 - `BENCH_CLAW_SUBSET=general,multimodal,multi_turn` selects Claw-Eval
   splits (default `general`); `BENCH_CLAW_TRIALS=3` / `BENCH_DEEPSWE_TRIALS`
   set repeats (3 = official Pass³ — pass requires every trial to pass).

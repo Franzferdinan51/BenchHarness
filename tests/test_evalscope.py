@@ -366,6 +366,90 @@ def test_toolathlon_tasks_and_run_external(tmp_path, monkeypatch):
     assert score.passed
 
 
+def test_container_base_url_rewrites_localhost(monkeypatch):
+    from benchharness.evalscope_driver import container_base_url
+
+    assert container_base_url("http://127.0.0.1:1234/v1") == \
+        "http://host.docker.internal:1234/v1"
+    assert container_base_url("http://localhost:8080/x") == \
+        "http://host.docker.internal:8080/x"
+    assert container_base_url("https://api.example.com/v1") == \
+        "https://api.example.com/v1"
+    monkeypatch.setenv("BENCH_CONTAINER_HOST", "10.0.0.5")
+    assert container_base_url("http://127.0.0.1:1234/v1") == \
+        "http://10.0.0.5:1234/v1"
+
+
+def test_run_one_deep_swe_prefix_and_env(tmp_path, monkeypatch):
+    import subprocess
+
+    import benchharness.evalscope_driver as driver
+
+    class FakeProc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    FakeProc.stdout = 'BENCH_SAMPLES_JSON:[{"value": {"acc": 1.0}}]\n'
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        seen["env"] = kwargs.get("env")
+        return FakeProc()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    oc = driver.run_one("deep_swe", "t1", model="mymodel",
+                        api_base="http://127.0.0.1:1234/v1", api_key="k",
+                        work_dir=tmp_path)
+    assert oc.passed
+    argv_model = seen["cmd"][seen["cmd"].index("deep_swe") + 3]
+    assert argv_model == "openai/mymodel"
+    assert seen["env"]["OPENAI_API_BASE"] == \
+        "http://host.docker.internal:1234/v1"
+    assert seen["env"]["OPENAI_API_KEY"] == "k"
+
+    # other benchmarks: no prefix, no env override
+    oc = driver.run_one("claw_eval", "T1", model="mymodel",
+                        api_base="http://127.0.0.1:1234/v1", api_key="k",
+                        work_dir=tmp_path)
+    assert seen["env"] is None
+
+
+def test_driver_wraps_deepswe_snapshot_download():
+    # The egress proxy only allows ports 80/443, so the driver must
+    # re-apply allow_internet after every (self-restoring) download.
+    # BENCH_DEEPSWE_ALLOW_INTERNET=0 restores the locked protocol.
+    from benchharness.evalscope_driver import DRIVER_SCRIPT
+
+    assert "BENCH_DEEPSWE_ALLOW_INTERNET" in DRIVER_SCRIPT
+    assert "_patched_download" in DRIVER_SCRIPT
+    assert "allow_internet = true" in DRIVER_SCRIPT
+
+
+def test_warn_if_outside_home(tmp_path, capsys):
+    from benchharness.evalscope_driver import warn_if_outside_home
+
+    from pathlib import Path
+
+    warn_if_outside_home(Path.home())
+    assert "warning" not in capsys.readouterr().err
+    # /tmp is outside $HOME on macOS (/private/tmp); missing ok too
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        from pathlib import Path
+
+        try:
+            Path(td).resolve().relative_to(Path.home().resolve())
+            inside = True
+        except ValueError:
+            inside = False
+        warn_if_outside_home(Path(td))
+        err = capsys.readouterr().err
+        assert ("warning" in err) != inside
+
+
 def test_evalscope_requirement_kind(tmp_path, monkeypatch):
     from benchharness.suites.base import Requirement, _requirement_missing
 

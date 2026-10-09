@@ -79,6 +79,7 @@ def list_bundled_tasks(benchmark: str, timeout_secs: float = 120.0) -> list[str]
 
 DRIVER_SCRIPT = r"""
 import glob, json, os, sys
+from pathlib import Path
 
 benchmark, task_id, split, model, api_base, api_key, trials, work_dir = sys.argv[1:9]
 extra_json = sys.argv[9] if len(sys.argv) > 9 else "{}"
@@ -91,6 +92,32 @@ except ValueError:
 
 from evalscope import run_task
 from evalscope.config import TaskConfig
+
+if benchmark == "deep_swe" and os.environ.get("BENCH_DEEPSWE_ALLOW_INTERNET", "1") != "0":
+    # Pier's egress proxy only permits ports 80/443, blocking any local
+    # model endpoint; allow_internet skips the proxy (verifier unchanged).
+    # ModelScope restores edited snapshots on download, so wrap the
+    # adapter's download_snapshot to re-apply after every download.
+    import evalscope.benchmarks.deep_swe.deep_swe_adapter as _deep_mod
+    _orig_download = _deep_mod.download_snapshot
+
+    def _patched_download(*args, **kwargs):
+        root = _orig_download(*args, **kwargs)
+        tasks_dir = Path(root) / "tasks"
+        if tasks_dir.is_dir():
+            for toml_path in sorted(tasks_dir.glob("*/task.toml")):
+                try:
+                    text = toml_path.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                if "allow_internet = false" in text:
+                    toml_path.write_text(
+                        text.replace("allow_internet = false",
+                                     "allow_internet = true"),
+                        encoding="utf-8")
+        return root
+
+    _deep_mod.download_snapshot = _patched_download
 
 dataset_args = {benchmark: {"extra_params": dict(extra_params)}}
 if benchmark == "claw_eval":
@@ -147,6 +174,19 @@ print("BENCH_SAMPLES_JSON:" + json.dumps(rows, default=str))
 """
 
 
+def warn_if_outside_home(path: Path) -> None:
+    """Warn when EvalScope jobs live outside $HOME (Colima bind mounts
+    don't propagate /tmp, so reward/trace files never download back)."""
+    import sys as _sys
+
+    try:
+        path.resolve().relative_to(Path.home().resolve())
+    except (ValueError, OSError):
+        print("warning: evalscope jobs outside $HOME are invisible to "
+              "Colima bind mounts; rewards will not download. Keep --out "
+              "under $HOME.", file=_sys.stderr)
+
+
 def run_one(
     benchmark: str,
     task_id: str,
@@ -163,15 +203,27 @@ def run_one(
     """Run one benchmark task via EvalScope; parse the returned report."""
     import uuid as _uuid
 
+    # Pier requires provider/model names and env-based routing: the agent
+    # runs inside Docker, reads OPENAI_API_BASE/OPENAI_API_KEY (via
+    # os.environ fallback), and allowlists the env URL for egress.
+    env: dict | None = None
+    if benchmark == "deep_swe":
+        if "/" not in model:
+            model = f"openai/{model}"
+        env = dict(os.environ)
+        env["OPENAI_API_BASE"] = container_base_url(api_base)
+        env["OPENAI_API_KEY"] = api_key
+
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in task_id)[:60]
     dest = (work_dir or Path.cwd()) / f"evalscope-{benchmark}-{safe}-{_uuid.uuid4().hex[:6]}"
     dest.mkdir(parents=True, exist_ok=True)
+    warn_if_outside_home(dest)
     cmd = [str(evalscope_python()), "-c", DRIVER_SCRIPT, benchmark, task_id,
            split, model, api_base, api_key, str(trials), str(dest),
            json.dumps(extra_params or {})]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=timeout_secs)
+                              timeout=timeout_secs, env=env)
     except subprocess.TimeoutExpired:
         return EvalScopeOutcome(task_id, 0.0, False,
                                 f"evalscope timeout after {timeout_secs:.0f}s",
@@ -215,6 +267,7 @@ def run_batch(
 
     dest = (work_dir or Path.cwd()) / f"evalscope-{benchmark}-batch-{_uuid.uuid4().hex[:6]}"
     dest.mkdir(parents=True, exist_ok=True)
+    warn_if_outside_home(dest)
     cmd = [str(evalscope_python()), "-c", DRIVER_SCRIPT, benchmark, "*",
            "default", model, api_base, api_key, "1", str(dest),
            json.dumps(extra_params or {}), str(limit)]
@@ -234,6 +287,23 @@ def run_batch(
                 return [], "unparseable samples line"
     tail = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()[-400:]
     return [], f"no samples (rc={proc.returncode}): {tail}"
+
+
+def container_base_url(base_url: str) -> str:
+    """Rewrite a host-local endpoint so task containers can reach it.
+
+    Pier/mini-swe-agent runs inside Docker; 127.0.0.1/localhost would
+    loop back into the container. Remote URLs pass through unchanged.
+    Override the gateway host with BENCH_CONTAINER_HOST.
+    """
+    host = os.environ.get("BENCH_CONTAINER_HOST", "host.docker.internal")
+    for local in ("http://127.0.0.1", "http://localhost",
+                  "https://127.0.0.1", "https://localhost"):
+        if base_url.startswith(local):
+            rest = base_url[len(local):]
+            scheme = local.split("://")[0]
+            return f"{scheme}://{host}{rest}"
+    return base_url
 
 
 def _num(value: object) -> float:
