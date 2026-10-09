@@ -261,5 +261,6 @@ def run_suites(
             pool.shutdown(wait=not timed_out, cancel_futures=timed_out)
 
     summary = RunSummary.from_results(run_id, model, suite_names, started_at, results)
+    summary.jobs = max(1, config.jobs)
     summary.write(run_dir)
     return run_dir, summary

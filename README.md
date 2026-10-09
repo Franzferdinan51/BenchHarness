@@ -125,10 +125,12 @@ Notes from live testing against local reasoning models (Ornith/Qwen3-style):
   available for HLE, BrowseComp, and SWE-Atlas QnA via `--judge` /
   `BENCH_JUDGE=1`. Off by default (doubles inference); judge verdicts are
   recorded alongside the heuristic score in each result's details.
-- Tasks run in parallel (`--jobs`, default 4) across all suites in one pool;
-  each task has a 600s wall-clock budget (`per_task_timeout_secs`) so one
-  hung generation can't stall a run. Note LM Studio itself may serialize
-  requests against a single loaded model.
+- Tasks run in parallel (`--jobs N`, default 4, or `BENCH_JOBS`) across
+  all suites in one pool; `--sequential` (same as `--jobs 1`) runs one
+  task at a time for minimal RAM/VRAM pressure. Each task has a 600s
+  wall-clock budget (`per_task_timeout_secs`) so one hung generation
+  can't stall a run. Note LM Studio itself may serialize requests
+  against a single loaded model.
 
 ## Setup
 

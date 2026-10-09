@@ -64,6 +64,7 @@ class RunSummary:
     model: str
     suites: list[str]
     started_at: str
+    jobs: int = 0
     finished_at: str = ""
     total: int = 0
     passed: int = 0

@@ -20,6 +20,28 @@ from benchharness.schema import read_results
 console = Console()
 
 
+def _positive_int(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected an integer >= 1, got {raw!r}")
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"expected an integer >= 1, got {value}")
+    return value
+
+
+def resolve_jobs(args: argparse.Namespace) -> int | None:
+    """CLI jobs resolution: --sequential forces 1 worker.
+
+    Returns None when neither flag was given (config/env default applies).
+    """
+    if args.sequential and args.jobs is not None:
+        raise RuntimeError("pass either --sequential or --jobs N, not both")
+    if args.sequential:
+        return 1
+    return args.jobs
+
+
 def cmd_list_suites(args: argparse.Namespace) -> int:
     table = Table(title="BenchHarness suites")
     table.add_column("suite")
@@ -70,11 +92,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     names = list(dict.fromkeys(names))
     cfg = BenchConfig.load({
         "model": args.model,
-        "jobs": args.jobs,
+        "jobs": resolve_jobs(args),
         "max_tokens_override": args.max_tokens,
         "judge_enabled": args.judge,
         "out_dir": Path(args.out) if args.out else None,
     })
+    mode = "sequential (1 worker)" if cfg.jobs == 1 else f"parallel ({cfg.jobs} workers)"
+    console.print(f"[bold]mode:[/bold] {mode}")
 
     def _progress(res) -> None:
         mark = "PASS" if res.passed else ("SKIP" if res.status == "skipped"
@@ -211,7 +235,10 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--limit", type=int, default=None, help="max tasks per suite")
     r.add_argument("--task", action="append", default=None,
                    help="only run tasks whose id contains this (repeatable)")
-    r.add_argument("--jobs", type=int, default=None, help="parallel workers")
+    r.add_argument("--jobs", type=_positive_int, default=None, metavar="N",
+                   help="parallel task workers (default 4; 1 = sequential; or BENCH_JOBS)")
+    r.add_argument("--sequential", action="store_true",
+                   help="run tasks one at a time (same as --jobs 1)")
     r.add_argument("--max-tokens", type=int, default=None,
                    help="override per-task completion cap (or BENCH_MAX_TOKENS)")
     r.add_argument("--judge", dest="judge", action="store_true", default=None,

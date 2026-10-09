@@ -108,7 +108,12 @@ class BenchConfig:
         cfg.request_timeout_secs = float(lm.get("request_timeout_secs", 900.0))
         cfg.temperature = float(lm.get("temperature", 0.0))
         cfg.max_retries = int(lm.get("max_retries", 3))
-        cfg.jobs = int(run.get("jobs", 4))
+        try:
+            cfg.jobs = int(os.environ.get("BENCH_JOBS", run.get("jobs", 4)))
+        except ValueError:
+            cfg.jobs = 4
+        if cfg.jobs < 1:
+            raise ValueError(f"jobs must be >= 1 (sequential=1), got {cfg.jobs}")
         cfg.harbor_timeout_secs = float(
             os.environ.get("BENCH_HARBOR_TIMEOUT", run.get("harbor_timeout_secs", 1800.0))
         )

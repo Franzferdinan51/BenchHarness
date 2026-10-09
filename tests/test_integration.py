@@ -492,3 +492,33 @@ def test_cmd_compare_two_runs(capsys, tmp_path):
     assert "model-a" in out and "model-b" in out
     assert "+0.500" in out  # demo delta
     assert "errors=0 skipped=0" in out
+
+
+def test_tasks_run_sequentially_with_jobs_1(tmp_path, mock_config, monkeypatch):
+    """2 x 0.25s mock tasks with jobs=1 must take >= sequential time."""
+    import time
+    import httpx
+    import benchharness.runner as runner_mod
+    real_client = runner_mod.LMStudioClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/chat/completions"):
+            time.sleep(0.25)
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": "PINEAPPLE 42"},
+                             "finish_reason": "stop"}]})
+        return httpx.Response(200, json={"data": []})
+
+    class MockClient(real_client):
+        def __init__(self, config):
+            super().__init__(config, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(runner_mod, "LMStudioClient", MockClient)
+    mock_config.out_dir = tmp_path / "bench-results"
+    mock_config.jobs = 1
+    started = time.monotonic()
+    run_dir, summary = run_suites(["demo"], mock_config)
+    elapsed = time.monotonic() - started
+    assert summary.total == 2
+    assert summary.jobs == 1
+    assert elapsed >= 0.45, f"expected sequential (~0.5s), took {elapsed:.2f}s"

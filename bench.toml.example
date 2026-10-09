@@ -13,7 +13,7 @@ request_timeout_secs = 900.0
 # max_tokens = 8192                       # or --max-tokens / BENCH_MAX_TOKENS
 
 [run]
-jobs = 4
+jobs = 4                                 # or --jobs N / --sequential / BENCH_JOBS
 per_task_timeout_secs = 600.0
 out_dir = "bench-results"                # keep under $HOME (Colima bind mounts)
 harbor_timeout_secs = 1800.0             # or BENCH_HARBOR_TIMEOUT

@@ -234,3 +234,41 @@ def test_patch_extraction_and_files():
         "diff --git a/x.py b/x.py\n- a"
     # non-diff fence without patch markers is not a patch
     assert extract_patch("```python\nprint(1)\n```") == ""
+
+
+def test_bench_jobs_env(monkeypatch):
+    monkeypatch.setenv("BENCH_JOBS", "8")
+    assert BenchConfig.load().jobs == 8
+    monkeypatch.setenv("BENCH_JOBS", "not-a-number")
+    assert BenchConfig.load().jobs == 4  # invalid falls back to default
+
+
+def test_bench_jobs_rejects_zero(monkeypatch):
+    import pytest
+    monkeypatch.setenv("BENCH_JOBS", "0")
+    with pytest.raises(ValueError, match="jobs must be >= 1"):
+        BenchConfig.load()
+
+
+def test_resolve_jobs():
+    import argparse
+    import pytest
+    from benchharness.cli import build_parser, resolve_jobs
+
+    args = build_parser().parse_args(["run", "--suite", "demo"])
+    assert resolve_jobs(args) is None  # config default applies
+    args = build_parser().parse_args(["run", "--suite", "demo", "--jobs", "8"])
+    assert resolve_jobs(args) == 8
+    args = build_parser().parse_args(["run", "--suite", "demo", "--sequential"])
+    assert resolve_jobs(args) == 1
+    args = build_parser().parse_args(
+        ["run", "--suite", "demo", "--sequential", "--jobs", "2"])
+    with pytest.raises(RuntimeError, match="either --sequential or --jobs"):
+        resolve_jobs(args)
+
+
+def test_jobs_flag_rejects_zero():
+    import pytest
+    from benchharness.cli import build_parser
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["run", "--suite", "demo", "--jobs", "0"])

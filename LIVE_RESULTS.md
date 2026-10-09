@@ -21,3 +21,17 @@ verdict, tokens, notes.
   TB/swe-pro `prepare()` fails fast when the daemon is down instead of
   burning GPU minutes; Colima restarted before the next trial.
 - Next: re-run the same trial with a healthy daemon to get a real score.
+
+## 2026-10-09 — tb-terminus / build-pmars — FAIL (reward 0.0)
+
+- Model: `duckbot-ornith-1.5-35b-a3b-mlx@8bit` (LM Studio, already loaded)
+- Command: `bench-harness run --suite tb-terminus --task build-pmars`
+- Wall time: 220s (3.7 min). Tokens: 44,267 prompt / 5,575 completion.
+- Verdict: genuine scored FAIL. 12 agent steps, only 1 parser error;
+  the agent executed real commands, believed it had finished ("tested
+  successfully outputting 'Results: 2 40 8'"), but the verifier returned
+  reward 0.0. First real tb-terminus data point on this model.
+- Notes: trials 4-6 were lost to session SIGTERM / Colima-down states
+  (trial 6 proved the Iteration 22 preflight: fail-fast, zero GPU burn).
+  Harbor removed its own container afterwards; /tmp empty, RAM recovered.
+- Next: second task sample to see if build-pmars is representative.
