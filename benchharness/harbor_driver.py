@@ -33,6 +33,40 @@ def have_harbor() -> bool:
     return shutil.which("harbor") is not None
 
 
+def docker_daemon_status(timeout_secs: float = 20.0) -> tuple[bool, str]:
+    """Check the docker daemon is reachable (`docker info`).
+
+    Returns (ok, detail). A dead daemon (e.g. Colima stopped mid-queue)
+    must fail fast in prepare() instead of burning GPU minutes on an
+    agent whose environment can never verify.
+    """
+    if shutil.which("docker") is None:
+        return False, "docker CLI not installed"
+    try:
+        proc = subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"],
+                              capture_output=True, text=True,
+                              timeout=timeout_secs)
+    except subprocess.TimeoutExpired:
+        return False, f"docker info timed out after {timeout_secs:.0f}s"
+    except OSError as exc:
+        return False, f"docker info failed: {exc}"
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "").strip().splitlines()
+        return False, err[0][-300:] if err else f"rc={proc.returncode}"
+    return True, f"server {proc.stdout.strip() or 'ok'}"
+
+
+def require_docker_daemon() -> str:
+    """Raise RuntimeError unless the docker daemon answers. Returns detail."""
+    ok, detail = docker_daemon_status()
+    if not ok:
+        raise RuntimeError(
+            f"docker daemon unreachable ({detail}); start Colima/Docker "
+            "Desktop before Harbor suites (live trial 2026-10-09 died "
+            "mid-run at AddTestsDirError when Colima stopped)")
+    return detail
+
+
 def default_cache_dir() -> Path:
     return Path(os.environ.get("BENCH_HARBOR_CACHE",
                                Path.home() / ".cache" / "benchharness" / "harbor"))

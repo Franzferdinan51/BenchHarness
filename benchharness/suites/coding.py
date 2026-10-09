@@ -200,8 +200,10 @@ class SweProAdapter(SuiteAdapter):
         return self._repo_dir() / "v2" / "tasks"
 
     def prepare(self, workdir: Path) -> None:
+        from benchharness.harbor_driver import require_docker_daemon
         from benchharness.sandbox import run_local
 
+        require_docker_daemon()
         repo = self._repo_dir()
         if (self._tasks_dir() / "hard51_ids.txt").is_file() or self._tasks_dir().is_dir():
             if any(self._tasks_dir().iterdir()):
@@ -580,8 +582,9 @@ class _TerminalBenchBase(SuiteAdapter):
         return _os.environ.get("TB_DATASET", "terminal-bench/terminal-bench-2-1")
 
     def prepare(self, workdir: Path) -> None:
-        from benchharness.harbor_driver import ensure_dataset
+        from benchharness.harbor_driver import ensure_dataset, require_docker_daemon
 
+        require_docker_daemon()
         ensure_dataset(self._dataset())
 
     def tasks(self, limit=None):

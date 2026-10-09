@@ -324,3 +324,37 @@ def test_hermes_bench_defers_cleanly():
     from benchharness.registry import get_suite
     tasks = get_suite("hermes-bench").tasks()
     assert len(tasks) == 1 and "skip_reason" in tasks[0].metadata
+
+
+def test_docker_daemon_status_ok(monkeypatch):
+    import subprocess
+
+    import benchharness.harbor_driver as driver
+
+    monkeypatch.setattr(driver.shutil, "which", lambda c: "/usr/bin/docker")
+    monkeypatch.setattr(driver.subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(
+                            a[0], 0, stdout="29.7.1\n", stderr=""))
+    ok, detail = driver.docker_daemon_status()
+    assert ok and "29.7.1" in detail
+
+
+def test_require_docker_daemon_raises_when_down(monkeypatch):
+    import benchharness.harbor_driver as driver
+
+    monkeypatch.setattr(driver, "docker_daemon_status",
+                        lambda timeout_secs=20.0: (False, "no such file or directory"))
+    import pytest
+    with pytest.raises(RuntimeError, match="docker daemon unreachable"):
+        driver.require_docker_daemon()
+
+
+def test_tb_prepare_fails_fast_without_daemon(monkeypatch, tmp_path):
+    import benchharness.harbor_driver as driver
+    from benchharness.registry import get_suite
+
+    monkeypatch.setattr(driver, "docker_daemon_status",
+                        lambda timeout_secs=20.0: (False, "colima stopped"))
+    import pytest
+    with pytest.raises(RuntimeError, match="docker daemon unreachable"):
+        get_suite("tb-terminus").prepare(tmp_path)
