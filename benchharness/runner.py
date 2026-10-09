@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -167,10 +167,38 @@ def run_suites(
             return res
 
         # httpx.Client is thread-safe for distinct requests; bound the pool.
-        with ThreadPoolExecutor(max_workers=max(1, config.jobs)) as pool:
-            for res in pool.map(_one, work):
-                results.append(res)
-                append_result(results_path, res)
+        # Each task gets config.per_task_timeout_secs wall-clock (covers all
+        # LM retries); overruns are recorded as timeout errors, not hangs.
+        pending: dict = {}
+        pool = ThreadPoolExecutor(max_workers=max(1, config.jobs))
+        timed_out = False
+        try:
+            for item in work:
+                pending[pool.submit(_one, item)] = item
+            while pending:
+                done, _ = wait(list(pending), timeout=config.per_task_timeout_secs,
+                               return_when=FIRST_COMPLETED)
+                if not done:
+                    timed_out = True
+                    for fut, (adapter, task) in list(pending.items()):
+                        fut.cancel()
+                        res = TaskResult(
+                            run_id=run_id, model=model, suite=adapter.name,
+                            task_id=task.task_id, passed=False, status="error",
+                            error=f"timeout after {config.per_task_timeout_secs:g}s",
+                        )
+                        results.append(res)
+                        append_result(results_path, res)
+                    pending.clear()
+                    break
+                for fut in done:
+                    results.append(fut.result())
+                    append_result(results_path, results[-1])
+                    del pending[fut]
+        finally:
+            # On timeout, don't let straggler threads hold the run hostage;
+            # each is still bounded by the httpx request timeout + retries.
+            pool.shutdown(wait=not timed_out, cancel_futures=timed_out)
 
     summary = RunSummary.from_results(run_id, model, suite_names, started_at, results)
     summary.write(run_dir)

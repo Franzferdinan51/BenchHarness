@@ -123,6 +123,59 @@ def test_max_tokens_override_reaches_server(mock_config):
     client.close()
 
 
+def test_tasks_run_in_parallel(tmp_path, mock_config, monkeypatch):
+    """4 x 0.25s mock tasks with jobs=4 must finish well under sequential time."""
+    import time
+    import httpx
+    import benchharness.runner as runner_mod
+    real_client = runner_mod.LMStudioClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/chat/completions"):
+            time.sleep(0.25)
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": "PINEAPPLE 42"},
+                             "finish_reason": "stop"}]})
+        return httpx.Response(200, json={"data": []})
+
+    class MockClient(real_client):
+        def __init__(self, config):
+            super().__init__(config, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(runner_mod, "LMStudioClient", MockClient)
+    mock_config.out_dir = tmp_path / "bench-results"
+    mock_config.jobs = 4
+    started = time.monotonic()
+    _, summary = run_suites(["demo", "demo"], mock_config)
+    elapsed = time.monotonic() - started
+    assert summary.total == 4
+    assert elapsed < 0.9, f"expected parallel (~0.25s), took {elapsed:.2f}s"
+
+
+def test_per_task_timeout_records_error(tmp_path, mock_config, monkeypatch):
+    import time
+    import httpx
+    import benchharness.runner as runner_mod
+    real_client = runner_mod.LMStudioClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        time.sleep(3)  # simulated hang; timeout must cut it off
+        return httpx.Response(200, json={"choices": []})
+
+    class MockClient(real_client):
+        def __init__(self, config):
+            super().__init__(config, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(runner_mod, "LMStudioClient", MockClient)
+    mock_config.out_dir = tmp_path / "bench-results"
+    mock_config.per_task_timeout_secs = 0.2
+    started = time.monotonic()
+    _, summary = run_suites(["demo"], mock_config)
+    assert time.monotonic() - started < 10
+    assert summary.errors == 2
+    assert summary.total == 2
+
+
 def test_tool_loop_executes_python(tmp_path, mock_config, monkeypatch):
     from benchharness.runner import run_tool_loop
     client = LMStudioClient(mock_config,
