@@ -71,6 +71,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     cfg = BenchConfig.load({
         "model": args.model,
         "jobs": args.jobs,
+        "max_tokens_override": args.max_tokens,
         "out_dir": Path(args.out) if args.out else None,
     })
 
@@ -149,6 +150,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--model", default=None, help="override LM_STUDIO_MODEL")
     r.add_argument("--limit", type=int, default=None, help="max tasks per suite")
     r.add_argument("--jobs", type=int, default=None, help="parallel workers")
+    r.add_argument("--max-tokens", type=int, default=None,
+                   help="override per-task completion cap (or BENCH_MAX_TOKENS)")
     r.add_argument("--out", default=None, help="results root (default bench-results/)")
     r.add_argument("--resume", default=None, help="resume a previous run dir")
     r.set_defaults(func=cmd_run)

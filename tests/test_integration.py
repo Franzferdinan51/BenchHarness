@@ -23,6 +23,46 @@ def test_client_ping_and_chat(mock_config):
     client.close()
 
 
+def test_client_400_fails_fast_with_body(mock_config):
+    import httpx
+
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(400, json={"error": {"message": "engine aborted"}})
+
+    client = LMStudioClient(mock_config, transport=httpx.MockTransport(handler))
+    try:
+        client.chat([{"role": "user", "content": "hi"}], max_tokens=8)
+        raise AssertionError("expected RuntimeError")
+    except RuntimeError as exc:
+        assert "engine aborted" in str(exc)
+    assert len(calls) == 1  # no retries on 400
+    client.close()
+
+
+def test_client_500_retries_then_succeeds(mock_config):
+    import httpx
+
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if len(calls) == 1:
+            return httpx.Response(500, json={"error": "busy"})
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]})
+
+    mock_config.max_retries = 2
+    client = LMStudioClient(mock_config, transport=httpx.MockTransport(handler))
+    resp = client.chat([{"role": "user", "content": "hi"}], max_tokens=8)
+    assert client.extract_text(resp) == "ok"
+    assert client.extract_finish_reason(resp) == "stop"
+    assert len(calls) == 2
+    client.close()
+
+
 def test_client_auto_model_pick():
     cfg = BenchConfig(model=None)
     client = LMStudioClient(cfg, transport=make_transport("x"))
@@ -59,6 +99,28 @@ def test_golden_demo_run(tmp_path, mock_config, monkeypatch):
     assert summary.total == 2 and summary.passed == 2
     assert (run_dir / "summary.json").is_file()
     assert len(read_results(run_dir / "results.jsonl")) == 2
+
+
+def test_max_tokens_override_reaches_server(mock_config):
+    import httpx
+    import json as _json
+    from benchharness.runner import evaluate_task
+
+    seen: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(_json.loads(request.content.decode())["max_tokens"])
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "PINEAPPLE"},
+                         "finish_reason": "stop"}]})
+
+    mock_config.max_tokens_override = 77
+    client = LMStudioClient(mock_config, transport=httpx.MockTransport(handler))
+    res = evaluate_task(client, get_suite("demo"),
+                        Task(task_id="t", prompt="p", reference="PINEAPPLE"),
+                        "m", "r", mock_config)
+    assert seen == [77] and res.passed
+    client.close()
 
 
 def test_tool_loop_executes_python(tmp_path, mock_config, monkeypatch):

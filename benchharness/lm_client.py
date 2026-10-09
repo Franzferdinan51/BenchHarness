@@ -68,6 +68,20 @@ def parse_models_payload(body: dict) -> tuple[list[DiscoveredModel], str]:
     return out, ("v0" if v0 else "v1")
 
 
+def _error_detail(resp: httpx.Response) -> str:
+    """Best-effort server error message (LM Studio puts it in error.message)."""
+    try:
+        body = resp.json()
+        if isinstance(body, dict):
+            err = body.get("error", body)
+            if isinstance(err, dict):
+                return str(err.get("message", resp.text))[:300]
+            return str(err)[:300]
+    except ValueError:
+        pass
+    return resp.text[:300]
+
+
 def select_chat_models(models: list[DiscoveredModel]) -> list[DiscoveredModel]:
     """Chat models only, loaded first (mirrors select_listed_models)."""
     chat = [m for m in models if is_chat_model(m.kind, m.id)]
@@ -166,7 +180,13 @@ class LMStudioClient:
         for attempt in range(self.config.max_retries + 1):
             try:
                 resp = self._client.post("/chat/completions", json=payload)
-                resp.raise_for_status()
+                if resp.status_code >= 400:
+                    detail = _error_detail(resp)
+                    if resp.status_code == 429 or resp.status_code >= 500:
+                        last_error = RuntimeError(f"HTTP {resp.status_code}: {detail}")
+                        time.sleep(min(2.0 * (attempt + 1), 8.0))
+                        continue
+                    raise RuntimeError(f"HTTP {resp.status_code}: {detail}")
                 data = resp.json()
                 if isinstance(data, dict):
                     return data
@@ -181,6 +201,13 @@ class LMStudioClient:
         try:
             return response["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError):
+            return ""
+
+    @staticmethod
+    def extract_finish_reason(response: dict) -> str:
+        try:
+            return response["choices"][0].get("finish_reason") or ""
+        except (KeyError, IndexError, TypeError, AttributeError):
             return ""
 
     @staticmethod

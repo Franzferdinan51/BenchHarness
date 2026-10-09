@@ -57,6 +57,7 @@ class BenchConfig:
     request_timeout_secs: float = 300.0
     max_retries: int = 3
     jobs: int = 4
+    max_tokens_override: int | None = None
     per_task_timeout_secs: float = 600.0
     out_dir: Path = field(default_factory=lambda: Path("bench-results"))
     source_file: str | None = None
@@ -104,6 +105,8 @@ class BenchConfig:
         cfg.temperature = float(lm.get("temperature", 0.0))
         cfg.max_retries = int(lm.get("max_retries", 3))
         cfg.jobs = int(run.get("jobs", 4))
+        mt = _nonblank(os.environ.get("BENCH_MAX_TOKENS")) or run.get("max_tokens")
+        cfg.max_tokens_override = int(mt) if mt is not None else None
         cfg.per_task_timeout_secs = float(run.get("per_task_timeout_secs", 600.0))
         out = run.get("out_dir", "bench-results")
         cfg.out_dir = Path(out)

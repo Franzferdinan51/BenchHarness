@@ -22,17 +22,23 @@ HLE_SYSTEM = (
 
 
 def _load_hf_dataset(name: str, config: str | None = None):
-    """Import-gated HF loader; returns None when unavailable (offline/smoke)."""
+    """Import-gated HF loader; returns None when unavailable (offline/smoke).
+
+    Tries test -> train -> validation splits (SWE-bench/HLE publish `test`;
+    GPQA publishes `train`). Gated datasets (gpqa, hle) need `HF_TOKEN`.
+    """
     try:
         from datasets import load_dataset  # type: ignore
     except Exception:
         return None
-    try:
-        if config:
-            return load_dataset(name, config, split="train")
-        return load_dataset(name, split="train")
-    except Exception:
-        return None
+    for split in ("test", "train", "validation"):
+        try:
+            if config:
+                return load_dataset(name, config, split=split)
+            return load_dataset(name, split=split)
+        except Exception:
+            continue
+    return None
 
 
 def extract_letter(text: str) -> str:

@@ -44,6 +44,7 @@ class TaskResult:
     status: str = "done"  # done | error | skipped
     error: str = ""
     details: str = ""
+    output_excerpt: str = ""  # first ~500 chars of raw model output
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_json(self) -> str:

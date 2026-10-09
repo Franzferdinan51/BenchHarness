@@ -20,7 +20,8 @@ from benchharness.suites.reasoning import _load_hf_dataset
 
 SWE_SYSTEM = (
     "You are fixing a GitHub issue in the repository below. Output ONLY a "
-    "unified diff patch (```diff fenced block) that resolves the issue. "
+    "unified diff patch inside a single ```diff fenced code block that "
+    "resolves the issue. Start the patch with 'diff --git' lines. "
     "No explanation outside the patch."
 )
 
@@ -29,6 +30,10 @@ def extract_patch(text: str) -> str:
     m = re.search(r"```diff\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
     if m:
         return m.group(1).strip()
+    # Truncation-tolerant: unterminated fence runs to end of output.
+    m = re.search(r"```(?:diff|patch|udiff)\s*(.*)$", text, re.DOTALL | re.IGNORECASE)
+    if m and ("diff --git" in m.group(1) or "--- a/" in m.group(1)):
+        return m.group(1).split("```")[0].strip()
     m = re.search(r"(diff --git .*|--- a/.*)", text, re.DOTALL)
     return m.group(1).strip() if m else ""
 
@@ -42,6 +47,9 @@ class _SweBase(SuiteAdapter):
     dataset: str = ""
     dataset_config: str | None = None
     status = "wired"
+    # Thinking models burn most of the budget on reasoning tokens before the
+    # patch; 16k gives the answer room to exist ([finish=length] at 4k).
+    max_tokens = 16384
 
     SMOKE = [
         ("smoke-1",
@@ -64,14 +72,16 @@ class _SweBase(SuiteAdapter):
                 if hints:
                     prompt += f"\n\nHints:\n{hints}"
                 prompt += "\n\nProvide the fix as a unified diff patch."
+                f2p = row.get("FAIL_TO_PASS", row.get("fail_to_pass", ""))
+                p2p = row.get("PASS_TO_PASS", row.get("pass_to_pass", ""))
                 out.append(Task(
                     task_id=str(row.get("instance_id", len(out))),
                     prompt=prompt,
                     reference=str(row.get("patch", "")),
                     metadata={"repo": repo,
                               "base_commit": row.get("base_commit", ""),
-                              "fail_to_pass": str(row.get("FAIL_TO_PASS", "")),
-                              "pass_to_pass": str(row.get("PASS_TO_PASS", ""))},
+                              "fail_to_pass": str(f2p),
+                              "pass_to_pass": str(p2p)},
                     system=SWE_SYSTEM,
                 ))
         else:
@@ -106,10 +116,9 @@ class SweVerifiedAdapter(_SweBase):
 
 class SweProAdapter(_SweBase):
     name = "swe-pro"
-    description = "SWE-bench Pro (SWE-bench/SWE-bench_Pro)"
-    dataset = "SWE-bench/SWE-bench_Pro"
-    source = "SWE-bench/SWE-bench_Pro"
-    status = "scaffold"  # dataset id tentative; verify against official release
+    description = "SWE-bench Pro (ScaleAI/SWE-bench_Pro), long-horizon tasks"
+    dataset = "ScaleAI/SWE-bench_Pro"
+    source = "ScaleAI/SWE-bench_Pro"
 
 
 class SweMultilingualAdapter(_SweBase):

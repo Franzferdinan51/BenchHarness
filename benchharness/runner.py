@@ -54,34 +54,46 @@ def run_tool_loop(
     return output, prompt_tokens, completion_tokens
 
 
+def effective_max_tokens(config: BenchConfig | None, adapter: SuiteAdapter) -> int:
+    if config is not None and config.max_tokens_override:
+        return config.max_tokens_override
+    return adapter.max_tokens
+
+
 def evaluate_task(
     client: LMStudioClient,
     adapter: SuiteAdapter,
     task: Task,
     model: str,
     run_id: str,
+    config: BenchConfig | None = None,
 ) -> TaskResult:
     if task.metadata.get("skip_reason"):
         return TaskResult(run_id=run_id, model=model, suite=adapter.name,
                           task_id=task.task_id, passed=False, status="skipped",
                           error=str(task.metadata["skip_reason"]))
     started = time.monotonic()
+    cap = effective_max_tokens(config, adapter)
     try:
+        finish = ""
         if task.metadata.get("tool_loop") == "run_python":
-            output, pt, ct = run_tool_loop(client, adapter, task, model,
-                                           adapter.max_tokens)
+            output, pt, ct = run_tool_loop(client, adapter, task, model, cap)
         else:
-            resp = client.chat(adapter.messages(task), model=model,
-                               max_tokens=adapter.max_tokens)
+            resp = client.chat(adapter.messages(task), model=model, max_tokens=cap)
             output = client.extract_text(resp)
             pt, ct = client.extract_usage(resp)
+            finish = client.extract_finish_reason(resp)
         score = adapter.score(output, task)
+        details = score.details
+        if finish and finish != "stop":
+            details = f"{details} [finish={finish}]".strip()
         return TaskResult(
             run_id=run_id, model=model, suite=adapter.name, task_id=task.task_id,
             passed=score.passed, score=score.score,
             latency_ms=int((time.monotonic() - started) * 1000),
             prompt_tokens=pt, completion_tokens=ct,
-            details=score.details,
+            details=details,
+            output_excerpt=output[:500],
         )
     except Exception as exc:  # per-task isolation: record, don't crash the run
         return TaskResult(
@@ -149,7 +161,7 @@ def run_suites(
 
         def _one(item: tuple[SuiteAdapter, Task]) -> TaskResult:
             adapter, task = item
-            res = evaluate_task(client, adapter, task, model, run_id)
+            res = evaluate_task(client, adapter, task, model, run_id, config)
             if progress_cb:
                 progress_cb(res)
             return res

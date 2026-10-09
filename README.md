@@ -15,7 +15,7 @@ tools share one setup.
 | `tb-terminus` | coding | scaffold — Terminus-2 harness loop lands next iteration |
 | `tb-claude` | coding | scaffold — Claude Code harness loop lands next iteration |
 | `swe-verified` | coding | wired — HF dataset + patch scoring (docker FAIL_TO_PASS eval next) |
-| `swe-pro` | coding | scaffold — dataset id tentative, loader shared with swe-verified |
+| `swe-pro` | coding | wired — `ScaleAI/SWE-bench_Pro` (lowercase fail/pass keys mapped) |
 | `swe-multilingual` | coding | wired — same loader/scorer as swe-verified |
 | `deepswe` | coding | scaffold — official dataset id TBD |
 | `frontier-bench` | coding | scaffold — official dataset id TBD |
@@ -35,6 +35,11 @@ tools share one setup.
 (or offline), dataset suites fall back to bundled smoke samples so the full
 pipeline stays exercisable. `scaffold` suites run through the runner and report
 honestly instead of failing.
+
+Gated HuggingFace datasets (`Idavidrein/gpqa`, `cais/hle`) need access plus
+`HF_TOKEN` in the environment (or `huggingface-cli login`); without it those
+suites use smoke samples. SWE-bench Verified / Multilingual / Pro
+(`ScaleAI/SWE-bench_Pro`) are open and load directly.
 
 ## Setup
 

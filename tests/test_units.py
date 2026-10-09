@@ -81,9 +81,54 @@ def test_normalize_answer():
     assert normalize_answer("56") == "56"
 
 
+def test_hf_loader_split_fallback(monkeypatch):
+    """Loader tries test -> train -> validation before giving up."""
+    import sys
+    import types
+    import benchharness.suites.reasoning as reasoning_mod
+
+    calls: list[str] = []
+
+    def fake_load_dataset(name, *args, **kwargs):
+        calls.append(kwargs.get("split", ""))
+        if kwargs.get("split") == "train":
+            return ["row"]
+        raise ValueError("no such split")
+
+    stub = types.ModuleType("datasets")
+    stub.load_dataset = fake_load_dataset
+    monkeypatch.setitem(sys.modules, "datasets", stub)
+    assert reasoning_mod._load_hf_dataset("x/y") == ["row"]
+    assert calls == ["test", "train"]
+
+    def always_fail(name, *args, **kwargs):
+        raise ValueError("offline")
+
+    stub.load_dataset = always_fail
+    assert reasoning_mod._load_hf_dataset("x/y") is None
+
+
+def test_swe_pro_lowercase_keys_mapped(monkeypatch):
+    import benchharness.suites.coding as coding_mod
+    from benchharness.registry import get_suite
+
+    rows = [{"instance_id": "i1", "repo": "r", "base_commit": "c",
+             "patch": "p", "problem_statement": "ps", "hints_text": "",
+             "fail_to_pass": ["t1"], "pass_to_pass": ["t2"]}]
+    monkeypatch.setattr(coding_mod, "_load_hf_dataset", lambda *a, **k: rows)
+    tasks = get_suite("swe-pro").tasks()
+    assert tasks[0].metadata["fail_to_pass"] == "['t1']"
+    assert tasks[0].metadata["pass_to_pass"] == "['t2']"
+
+
 def test_patch_extraction_and_files():
     text = '```diff\ndiff --git a/x.py b/x.py\n- a\n+ b\n```'
     patch = extract_patch(text)
     assert "diff --git" in patch
     assert touched_files(patch) == {"x.py"}
     assert extract_patch("no patch here") == ""
+    # truncated output: unterminated fence still yields the patch
+    assert extract_patch("```diff\ndiff --git a/x.py b/x.py\n- a") == \
+        "diff --git a/x.py b/x.py\n- a"
+    # non-diff fence without patch markers is not a patch
+    assert extract_patch("```python\nprint(1)\n```") == ""
