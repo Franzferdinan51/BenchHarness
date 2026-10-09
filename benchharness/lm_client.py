@@ -136,16 +136,37 @@ class LMStudioClient:
         return []
 
     def resolve_model(self) -> str:
-        """Explicit config model wins; else first loaded chat model."""
-        if self.config.model:
-            return self.config.model
+        """Model pick, mirroring local-grok-cli resolution.
+
+        Explicit id (CLI > env > file) wins when it matches a discovered
+        model — exact, then unique substring/alias. A stale or unknown
+        id warns and falls back to the first loaded chat model instead
+        of failing requests later; empty preference auto-picks.
+        """
+        import sys as _sys
+
         models = self.list_models()
+        want = (self.config.model or "").strip()
         if not models:
+            if want:
+                return want  # undiscoverable; trust the explicit id
             raise RuntimeError(
                 "No chat model found on LM Studio. Set LM_STUDIO_MODEL or load "
                 "a model (hint: `lms server start`, then load a model)."
             )
-        return models[0].id
+        ids = [m.id for m in models]
+        if not want:
+            return ids[0]
+        if want in ids:
+            return want
+        cands = [i for i in ids if want in i or i in want]
+        if len(cands) == 1:
+            print(f"warning: model {want!r} fuzzy-matched to {cands[0]!r}",
+                  file=_sys.stderr)
+            return cands[0]
+        print(f"warning: model {want!r} not loaded; using {ids[0]!r} "
+              f"(loaded: {', '.join(ids[:8])})", file=_sys.stderr)
+        return ids[0]
 
     def ping(self) -> dict:
         """Lightweight liveness check used by `doctor`."""
@@ -170,7 +191,9 @@ class LMStudioClient:
     ) -> dict:
         """POST /chat/completions with retries. Returns the raw response dict."""
         payload = {
-            "model": model or self.resolve_model(),
+            # runner/doctor validate once via resolve_model(); the hot path
+            # trusts the configured id (no discovery call per request).
+            "model": model or self.config.model or self.resolve_model(),
             "messages": messages,
             "temperature": self.config.temperature if temperature is None else temperature,
             "max_tokens": max_tokens,

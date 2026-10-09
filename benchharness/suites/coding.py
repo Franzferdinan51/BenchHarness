@@ -271,7 +271,9 @@ class SweProAdapter(SuiteAdapter):
             n_tasks=1, agent_kwargs=agent_kwargs, agent_env=agent_env,
             memory_policy=memory, dataset_path=self._tasks_dir(),
         )
-        returncode, tail = run_job(cmd, timeout)
+        # In-process agents (terminus-2 via litellm) read the subprocess
+        # env, not the container env: merge agent_env into the child.
+        returncode, tail = run_job(cmd, timeout, {**_os.environ, **agent_env})
         outcomes = parse_job_dir(jobs_dir / job_name)
         if not outcomes:
             return tail, Score(passed=False, score=0.0,
@@ -650,7 +652,9 @@ class _TerminalBenchBase(SuiteAdapter):
             agent_kwargs=agent_kwargs, agent_env=agent_env,
             memory_policy=memory,
         )
-        returncode, tail = run_job(cmd, timeout)
+        # In-process agents (terminus-2 via litellm) read the subprocess
+        # env, not the container env: merge agent_env into the child.
+        returncode, tail = run_job(cmd, timeout, {**_os.environ, **agent_env})
         outcomes = parse_job_dir(jobs_dir / job_name)
         if not outcomes:
             return tail, Score(passed=False, score=0.0,

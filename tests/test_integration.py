@@ -70,6 +70,33 @@ def test_client_auto_model_pick():
     client.close()
 
 
+def test_client_resolve_validates_and_falls_back(capsys):
+    models = [
+        {"id": "duckbot-ornith-1.5-35b-a3b-mlx@8bit", "object": "model",
+         "type": "llm", "state": "loaded"},
+        {"id": "other-llm", "object": "model", "type": "llm",
+         "state": "loaded"},
+    ]
+    # exact match, no warning
+    client = LMStudioClient(BenchConfig(model="other-llm"),
+                            transport=make_transport("x", models=models))
+    assert client.resolve_model() == "other-llm"
+    assert "warning" not in capsys.readouterr().err
+    client.close()
+    # unique substring fuzzy-matches like the app's alias lookup
+    client = LMStudioClient(BenchConfig(model="ornith"),
+                            transport=make_transport("x", models=models))
+    assert client.resolve_model() == "duckbot-ornith-1.5-35b-a3b-mlx@8bit"
+    assert "fuzzy-matched" in capsys.readouterr().err
+    client.close()
+    # stale id warns and falls back instead of 400ing later
+    client = LMStudioClient(BenchConfig(model="evicted-model"),
+                            transport=make_transport("x", models=models))
+    assert client.resolve_model() == "duckbot-ornith-1.5-35b-a3b-mlx@8bit"
+    assert "not loaded; using" in capsys.readouterr().err
+    client.close()
+
+
 def test_registry_covers_goal_suites():
     assert len(REGISTRY) == 20  # 19 goal suites + demo
     for name in ("tb-terminus", "tb-claude", "tb-hermes", "swe-verified", "swe-pro",

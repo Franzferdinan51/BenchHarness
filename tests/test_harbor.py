@@ -262,6 +262,7 @@ def test_tb_run_external_maps_outcome(tmp_path, monkeypatch):
 
     def fake_run_job(cmd, timeout, env=None):
         seen["cmd"] = cmd
+        seen["env"] = env
         return 0, "job tail"
 
     def fake_parse(job_dir):
@@ -284,6 +285,8 @@ def test_tb_run_external_maps_outcome(tmp_path, monkeypatch):
     joined = " ".join(seen["cmd"])
     assert "--agent" not in joined  # short flags used
     assert "-a terminus-2" in joined and "api_base=" in joined
+    # in-process agents read the child env, not the container env
+    assert seen["env"]["OPENAI_API_KEY"] == "k"
 
 
 def test_tb_hermes_requires_cli_and_skips_api_base(tmp_path, monkeypatch):

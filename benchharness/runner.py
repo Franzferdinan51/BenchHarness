@@ -195,7 +195,7 @@ def run_suites(
         append_result(results_path, r)
 
     with LMStudioClient(config) as client:
-        model = config.model or client.resolve_model()
+        model = client.resolve_model()  # validates + falls back like the app
         for r in results:
             if r.model == "?":
                 r.model = model
