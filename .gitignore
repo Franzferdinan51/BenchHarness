@@ -7,3 +7,4 @@ build/
 bench-results/
 .pytest_cache/
 *.jsonl.tmp
+logs/
