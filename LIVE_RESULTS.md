@@ -148,3 +148,13 @@ verdict, tokens, notes.
   Notes: per-task Dockerfiles build on first run (no prebuilt images);
   4 GPU tasks will score 0.0 on a GPU-less Mac.
 - 20/20 suites now wired; zero scaffolds remain.
+
+## 2026-10-09 — swe-pro / NodeBB-00c70ce7 — FAIL (harbor timeout rc=124)
+
+- Model: `duckbot-ornith-1.5-35b-a3b-mlx@8bit`, sequential, 1824s (30 min).
+- Verdict: FAIL. 201 agent steps but 190 parser rejections (same
+  `<tool_call>` pseudo-XML pattern as TB3/TB8), so effectively nothing
+  executed and the Harbor run hit its timeout with no trial results.
+  Cumulative 6.37M prompt / 92k completion tokens across the run.
+- Cleanup: Harbor left 2 containers running after the timeout kill;
+  stopped + removed manually. No leftovers, 92% mem free.
