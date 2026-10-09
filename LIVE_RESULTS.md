@@ -35,3 +35,17 @@ verdict, tokens, notes.
   (trial 6 proved the Iteration 22 preflight: fail-fast, zero GPU burn).
   Harbor removed its own container afterwards; /tmp empty, RAM recovered.
 - Next: second task sample to see if build-pmars is representative.
+
+## 2026-10-09 — tb-terminus / fix-git — FAIL (AgentTimeoutError)
+
+- Model: `duckbot-ornith-1.5-35b-a3b-mlx@8bit` (LM Studio, already loaded)
+- Command: `bench-harness run --suite tb-terminus --task fix-git --sequential`
+- Wall time: 967s (16 min, agent-side timeout). Tokens: 92,641 / 21,413.
+- Verdict: FAIL. 29 of 30 steps rejected by the terminus-2 parser — the
+  model emitted `<tool_call>` pseudo-XML instead of the JSON schema, so
+  ~zero commands executed before the agent timed out.
+- Pattern: TB7 executed real commands cleanly (1 parse error) while TB3
+  and TB8 collapsed into pseudo-XML. The model's terminus-2 schema
+  adherence is inconsistent run-to-run — a format-repair shim or a
+  stricter local-model system prompt is the likely next harness fix.
+- Cleanup verified: Harbor removed its container, /tmp empty, 61% free.
