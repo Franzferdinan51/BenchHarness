@@ -150,8 +150,17 @@ class BrowseCompAdapter(SuiteAdapter):
         want = normalize_answer(task.reference)
         got = normalize_answer(strip_thinking(output))
         ok = bool(want) and (got == want or want in got)
-        return Score(passed=ok, details=f"containment={ok}; "
-                     "canonical LLM grader lands in iteration 4")
+        return Score(passed=ok, details=f"containment={ok} (BENCH_JUDGE=1 for LLM grader)")
+
+    def score_with_client(self, output, task, client, model):
+        from benchharness.judge import judge_correct
+
+        verdict, _ = judge_correct(client, model, task.prompt, task.reference,
+                                   strip_thinking(output))
+        if verdict is None:
+            return None
+        return Score(passed=verdict, score=1.0 if verdict else 0.0,
+                     details="canonical simple-evals grader")
 
 
 class McpAtlasAdapter(SuiteAdapter):

@@ -138,6 +138,16 @@ class HleAdapter(SuiteAdapter):
         ok = bool(want) and (got == want or want in got)
         return Score(passed=ok, details=f"normalized_match={ok}")
 
+    def score_with_client(self, output, task, client, model):
+        from benchharness.judge import judge_correct
+
+        verdict, _ = judge_correct(client, model, task.prompt, task.reference,
+                                   strip_thinking(output))
+        if verdict is None:
+            return None
+        return Score(passed=verdict, score=1.0 if verdict else 0.0,
+                     details="canonical simple-evals grader")
+
 
 class HleToolsAdapter(HleAdapter):
     """HLE with tools: same questions, model may call a sandboxed python tool."""

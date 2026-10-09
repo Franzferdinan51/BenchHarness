@@ -74,6 +74,10 @@ Notes from live testing against local reasoning models (Ornith/Qwen3-style):
 - Thinking models can spend thousands of tokens reasoning before answering;
   SWE suites default to a 16384 completion cap (`--max-tokens` overrides).
 - The picker prefers the loaded model; set `LM_STUDIO_MODEL` to force one.
+- LLM-judge grading (canonical simple-evals `correct: yes|no` protocol) is
+  available for HLE, BrowseComp, and SWE-Atlas QnA via `--judge` /
+  `BENCH_JUDGE=1`. Off by default (doubles inference); judge verdicts are
+  recorded alongside the heuristic score in each result's details.
 - Tasks run in parallel (`--jobs`, default 4) across all suites in one pool;
   each task has a 600s wall-clock budget (`per_task_timeout_secs`) so one
   hung generation can't stall a run. Note LM Studio itself may serialize

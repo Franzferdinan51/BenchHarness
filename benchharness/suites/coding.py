@@ -335,8 +335,20 @@ class SweAtlasQnaAdapter(SuiteAdapter):
         hits = {k for k in rubric_keys if k in answer.lower()}
         recall = len(hits) / len(rubric_keys)
         return Score(passed=recall >= 0.6, score=recall,
-                     details=f"rubric_recall={len(hits)}/{len(rubric_keys)}; "
-                             "LLM rubric judge lands in iteration 4")
+                     details=f"rubric_recall={len(hits)}/{len(rubric_keys)} "
+                             "(BENCH_JUDGE=1 for LLM rubric judge)")
+
+    def score_with_client(self, output, task, client, model):
+        from benchharness.judge import judge_correct
+
+        rubric = task.metadata.get("rubric", "")
+        gold = task.reference + (f"\nRubric: {rubric}" if rubric else "")
+        verdict, _ = judge_correct(client, model, task.prompt, gold,
+                                   strip_thinking(output))
+        if verdict is None:
+            return None
+        return Score(passed=verdict, score=1.0 if verdict else 0.0,
+                     details="LLM rubric judge")
 
 
 class _TerminalBenchBase(SuiteAdapter):

@@ -61,6 +61,7 @@ class BenchConfig:
     per_task_timeout_secs: float = 600.0
     harbor_timeout_secs: float = 1800.0
     harbor_memory_policy: str = "ignore"
+    judge_enabled: bool = False
     out_dir: Path = field(default_factory=lambda: Path("bench-results"))
     source_file: str | None = None
 
@@ -117,6 +118,11 @@ class BenchConfig:
             or _nonblank(run.get("harbor_memory_policy"))
             or "ignore"
         )
+        judge_raw = _nonblank(os.environ.get("BENCH_JUDGE"))
+        if judge_raw is not None:
+            cfg.judge_enabled = judge_raw.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            cfg.judge_enabled = bool(run.get("judge", False))
         mt = _nonblank(os.environ.get("BENCH_MAX_TOKENS")) or run.get("max_tokens")
         cfg.max_tokens_override = int(mt) if mt is not None else None
         cfg.per_task_timeout_secs = float(run.get("per_task_timeout_secs", 600.0))

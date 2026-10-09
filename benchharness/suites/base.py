@@ -82,6 +82,12 @@ class SuiteAdapter(ABC):
     def prepare(self, workdir: Path) -> None:
         """Optional per-run setup (download data, build images). No-op default."""
 
+    def score_with_client(self, output: str, task: Task, client, model: str) -> Score | None:
+        """LLM-judge grading hook. Return a Score to use the judge verdict,
+        or None to keep the synchronous score(). Only called when judging
+        is enabled (BENCH_JUDGE=1)."""
+        return None
+
     def run_external(self, task: Task, ctx: dict) -> tuple[str, Score] | None:
         """External execution hook (Harbor/docker loops).
 

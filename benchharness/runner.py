@@ -111,6 +111,19 @@ def evaluate_task(
         details = score.details
         if finish and finish != "stop":
             details = f"{details} [finish={finish}]".strip()
+        judge_hook = getattr(adapter, "score_with_client", None)
+        judge_on = bool(config is not None and getattr(config, "judge_enabled", False))
+        if judge_on and callable(judge_hook):
+            try:
+                judged = judge_hook(output, task, client, model)
+            except Exception as exc:
+                judged = None
+                details = f"{details} [judge error: {exc}]".strip()
+            if judged is not None:
+                details = (f"judge={'pass' if judged.passed else 'fail'} "
+                           f"({judged.details}); heuristic={details}")
+                score = judged
+                judged.details = details
         return TaskResult(
             run_id=run_id, model=model, suite=adapter.name, task_id=task.task_id,
             passed=score.passed, score=score.score,

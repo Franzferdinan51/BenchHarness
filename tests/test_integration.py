@@ -176,6 +176,47 @@ def test_per_task_timeout_records_error(tmp_path, mock_config, monkeypatch):
     assert summary.total == 2
 
 
+def test_judge_path_overrides_heuristic(mock_config):
+    import httpx
+    import json as _json
+    from benchharness.runner import evaluate_task
+
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = _json.loads(request.content.decode())
+        text = body["messages"][-1]["content"]
+        calls.append(text)
+        if "Judge whether" in text:
+            content = "reasoning: matches\ncorrect: yes"
+        else:
+            content = "something that does not contain the answer"
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": content},
+                         "finish_reason": "stop"}]})
+
+    from benchharness.lm_client import LMStudioClient
+    client = LMStudioClient(mock_config, transport=httpx.MockTransport(handler))
+    mock_config.judge_enabled = True
+    res = evaluate_task(client, get_suite("hle"),
+                        Task(task_id="t", prompt="Capital of France?",
+                             reference="Paris"),
+                        "m", "r", mock_config)
+    assert len(calls) == 2  # task call + judge call
+    assert res.passed and res.details.startswith("judge=pass")
+    assert "heuristic=" in res.details
+
+    # default off: single call, heuristic verdict stands
+    mock_config.judge_enabled = False
+    calls.clear()
+    res2 = evaluate_task(client, get_suite("hle"),
+                         Task(task_id="t", prompt="Capital of France?",
+                              reference="Paris"),
+                         "m", "r", mock_config)
+    assert len(calls) == 1 and not res2.passed
+    client.close()
+
+
 def test_tool_loop_executes_python(tmp_path, mock_config, monkeypatch):
     from benchharness.runner import run_tool_loop
     client = LMStudioClient(mock_config,

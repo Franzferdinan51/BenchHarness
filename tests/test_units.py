@@ -100,6 +100,25 @@ def test_think_decoys_ignored_by_scorers():
                      Task(task_id="t", prompt="p", reference="Paris")).passed
 
 
+def test_judge_verdict_parsing():
+    from benchharness.judge import parse_verdict
+    assert parse_verdict("reasoning: ok\ncorrect: yes") is True
+    assert parse_verdict("Correct: (no)") is False
+    assert parse_verdict("correct: YES") is True
+    assert parse_verdict("no verdict here") is None
+    # last occurrence wins
+    assert parse_verdict("correct: no\n...reconsider...\ncorrect: yes") is True
+
+
+def test_judge_config_flag(monkeypatch):
+    from benchharness.config import BenchConfig
+    assert BenchConfig.load().judge_enabled is False
+    monkeypatch.setenv("BENCH_JUDGE", "1")
+    assert BenchConfig.load().judge_enabled is True
+    monkeypatch.setenv("BENCH_JUDGE", "0")
+    assert BenchConfig.load().judge_enabled is False
+
+
 def test_browsecomp_decrypt_roundtrip():
     import base64
     import hashlib
