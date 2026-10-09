@@ -4,14 +4,32 @@
 
 [lm]
 # base_url = "http://127.0.0.1:1234/v1"  # or GROK_MODELS_BASE_URL / LM_STUDIO_URL
-# model = "qwen3.8-27b-splash"           # or LM_STUDIO_MODEL / GROK_MODEL
+# model = "my-loaded-model"              # or LM_STUDIO_MODEL / GROK_MODEL
 # api_key = "lm-studio"                  # or LM_STUDIO_API_KEY
 temperature = 0.0
 max_retries = 3
-request_timeout_secs = 300.0
+request_timeout_secs = 900.0
 # connect_timeout_secs = 2.0             # or GROK_CONNECT_TIMEOUT_SECS
+# max_tokens = 8192                       # or --max-tokens / BENCH_MAX_TOKENS
 
 [run]
 jobs = 4
 per_task_timeout_secs = 600.0
-out_dir = "bench-results"
+out_dir = "bench-results"                # keep under $HOME (Colima bind mounts)
+harbor_timeout_secs = 1800.0             # or BENCH_HARBOR_TIMEOUT
+harbor_memory_policy = "ignore"          # or BENCH_HARBOR_MEMORY
+evalscope_timeout_secs = 5400.0          # or BENCH_EVALSCOPE_TIMEOUT
+# judge_enabled = false                  # or --judge / BENCH_JUDGE=1
+
+# Env-only knobs (no file keys):
+#   BENCH_HARBOR_AGENT=nop|oracle|terminus-2   # Harbor agent override (smoke)
+#   TB_DATASET, NL2REPO_DATASET                # Harbor dataset overrides
+#   BENCH_EVALSCOPE_PYTHON                     # isolated EvalScope interpreter
+#   BENCH_CLAW_SUBSET, BENCH_CLAW_TRIALS       # claw splits (general,…) / Pass^N
+#   BENCH_DEEPSWE_TRIALS                       # deep_swe repeats
+#   BENCH_DEEPSWE_ALLOW_INTERNET=0             # locked Pier protocol (blocks local LM)
+#   BENCH_CONTAINER_HOST                       # container→host gateway (default host.docker.internal)
+#   BENCH_MCP_ENV_URL                          # agent-environment (default localhost:1984)
+#   --task                                     # run only matching task ids (repeatable)
+#   HF_TOKEN                                   # gated HF datasets (gpqa/hle)
+#   ANTHROPIC_API_KEY                          # tb-claude harness

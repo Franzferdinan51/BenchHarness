@@ -394,9 +394,13 @@ class FrontierBenchAdapter(SuiteAdapter):
 class Nl2RepoAdapter(SuiteAdapter):
     """NL2Repo (AweAI-Team/AweAgent-Meta-NL2Repo): build a repo from an NL spec.
 
-    Task enumeration is real; the docker build + golden-test verify loop
-    (verify_cmd in per-task images) lands in iteration 4, so tasks defer
-    without burning model calls.
+    Custom shell-agent loop + per-task verify_cmd grading (container
+    mechanics validated live; full agent trial deferred to GPU-free).
+    The official nl2repobench/nl2repobench Harbor set (104 tasks) is
+    NOT usable: every tester sidecar image sits on a private GCP
+    Artifact Registry (Unauthenticated 403). Revisit if the publisher
+    opens the registry; migration is a ~20-line _TerminalBenchBase
+    subclass (dataset_default + prompt_prefix).
     """
 
     name = "nl2repo"

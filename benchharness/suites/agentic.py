@@ -368,11 +368,13 @@ class ToolathlonAdapter(SuiteAdapter):
 class HermesBenchAdapter(SuiteAdapter):
     """Hermes Bench (Nous HermesIndex suite: 150 tasks, 25 categories).
 
-    As of iteration 6 the official suite has no public runner or task
-    download — it runs inside Hermes Agent via the Nous portal
+    As of iteration 18 the official suite still has no public runner or
+    task download — it runs inside Hermes Agent via the Nous portal
     (https://portal.nousresearch.com/bench). Runnable proxies in this
     harness: tb-hermes (same Hermes Agent harness on Terminal-Bench) and
-    third-party am423/hermes-bench-tool-call (61 local tool-call tasks).
+    third-party am423/hermes-bench-tool-call (local tool-call tasks).
+    Surveyed and rejected: Bent-Solutions/hermes-bench (self-hosted UI
+    for user-authored custom suites; carries no official tasks).
     """
 
     name = "hermes-bench"
