@@ -5,9 +5,8 @@ scaffold = dataset/repo pointer recorded, full oracle loop lands next iteration
            (tasks still enumerable where the dataset is importable)
 
 SWE-family adapters share _SweBase: HF dataset load, patch-format prompt,
-and patch-extraction scoring. Docker-based FAIL_TO_PASS execution is the
-documented iteration-2 upgrade; today a well-formed non-empty patch that
-touches the gold files scores partial credit, exact-match scores full.
+patch extraction, and official docker FAIL_TO_PASS grading when the
+swebench package + daemon are available (heuristic patch credit otherwise).
 """
 
 from __future__ import annotations
@@ -622,7 +621,7 @@ class SweAtlasQnaAdapter(SuiteAdapter):
     """SWE Atlas QnA (ScaleAI/SWE-Atlas-QnA): 124 deep code-comprehension Qs.
 
     Scores rubric-keyword recall: fraction of rubric keywords covered by the
-    answer. The official rubric LLM-judge lands in iteration 4.
+    answer (+ LLM rubric judge via BENCH_JUDGE=1).
     """
 
     name = "swe-atlas-qna"

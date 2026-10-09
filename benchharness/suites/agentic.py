@@ -2,14 +2,16 @@
 
 Wired with documented heuristic graders (parametric answers, no live tools):
 - widesearch: ByteDance-Seed/WideSearch, required-column recall on the
-  returned markdown table (per-cell llm_judge lands in iteration 4).
+  returned markdown table (heuristic only).
 - browsecomp: smolagents/browse_comp mirror, canonical simple-evals decrypt,
-  normalized-answer containment (LLM grader template lands in iteration 4).
-- mcp-atlas: ScaleAI/MCP-Atlas, GTFA claim-keyword recall (MCP-server
-  tool-call fidelity grading lands with the sandbox in iteration 4).
+  normalized-answer containment (+ LLM grader via BENCH_JUDGE=1).
+- mcp-atlas: ScaleAI/MCP-Atlas, GTFA claim-keyword recall, plus an
+  EvalScope agent mode over live MCP servers.
+- toolathlon: Toolathlon-Verified via the official remote service with a
+  local relay proxy (EvalScope wrapper).
+- claweval: claw-eval/Claw-Eval via ModelScope + EvalScope.
 
-Deferred without burning model calls: toolathlon (needs 32 app
-environments), claweval (source candidates unresolved).
+Scaffold: hermes-bench (portal has no public task source).
 """
 
 from __future__ import annotations
@@ -112,8 +114,7 @@ class WideSearchAdapter(SuiteAdapter):
         return Score(
             passed=recall >= 0.8,
             score=recall,
-            details=f"column_recall={len(hits)}/{len(cols)}; "
-            "per-cell llm_judge lands in iteration 4",
+            details=f"column_recall={len(hits)}/{len(cols)} (heuristic)",
         )
 
 

@@ -49,3 +49,29 @@ verdict, tokens, notes.
   adherence is inconsistent run-to-run — a format-repair shim or a
   stricter local-model system prompt is the likely next harness fix.
 - Cleanup verified: Harbor removed its container, /tmp empty, 61% free.
+
+## 2026-10-09 — swe-verified (0/2) + gpqa-diamond smoke (2/2)
+
+- Model: `duckbot-ornith-1.5-35b-a3b-mlx@8bit`, sequential.
+- swe-verified/astropy-12907 FAIL: model generated 32,767 tokens (hit the
+  cap, finish=length) without emitting any patch — rambled instead.
+- swe-verified/astropy-13033 FAIL: model emitted a real diff, but it was
+  truncated mid-line, so the official docker eval failed at patch-apply
+  (`patch unexpectedly ends in middle of line`). Genuine model FAIL;
+  the harness docker-eval path itself is proven (container ran, report
+  parsed, `error_ids` surfaced correctly).
+- gpqa-diamond smoke-1/smoke-2 PASS (1.1s / 0.6s). Real GPQA needs
+  HF_TOKEN (gated); smoke fallback works as designed.
+- Note: an earlier identical run errored 4x with 600s timeouts because
+  LM Studio was wedged right after the 16-min TB8 trial; server was
+  healthy minutes later (demo 2/2). Lesson: pause briefly after long
+  agent runs before chat batches.
+
+## 2026-10-09 — hle / widesearch / browsecomp / swe-atlas-qna (1/4)
+
+- Model: `duckbot-ornith-1.5-35b-a3b-mlx@8bit`, sequential, limit 1 each.
+- hle/smoke-1 PASS (0.6s). Real HLE gated (needs HF_TOKEN); smoke ok.
+- widesearch/ws_en_001 scored 2/8 column recall (20s, real WideSearch row).
+- browsecomp/browsecomp-0 containment=False (4.3s, real decrypted row).
+- swe-atlas-qna real rubric task: recall 8/99 (2.5s).
+- All genuine scored results; no errors, no infra issues.
