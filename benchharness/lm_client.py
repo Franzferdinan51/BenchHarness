@@ -204,6 +204,13 @@ class LMStudioClient:
             return ""
 
     @staticmethod
+    def extract_reasoning(response: dict) -> str:
+        try:
+            return response["choices"][0]["message"].get("reasoning_content") or ""
+        except (KeyError, IndexError, TypeError, AttributeError):
+            return ""
+
+    @staticmethod
     def extract_finish_reason(response: dict) -> str:
         try:
             return response["choices"][0].get("finish_reason") or ""

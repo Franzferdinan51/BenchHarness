@@ -45,6 +45,7 @@ class TaskResult:
     error: str = ""
     details: str = ""
     output_excerpt: str = ""  # first ~500 chars of raw model output
+    reasoning_excerpt: str = ""  # last ~500 chars of reasoning_content (thinking models)
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_json(self) -> str:

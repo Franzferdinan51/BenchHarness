@@ -19,10 +19,10 @@ from benchharness.suites.base import Requirement, SuiteAdapter, Task, strip_thin
 from benchharness.suites.reasoning import _load_hf_dataset
 
 SWE_SYSTEM = (
-    "You are fixing a GitHub issue in the repository below. Output ONLY a "
-    "unified diff patch inside a single ```diff fenced code block that "
-    "resolves the issue. Start the patch with 'diff --git' lines. "
-    "No explanation outside the patch."
+    "You are fixing a GitHub issue in the repository below. Think briefly "
+    "(under 200 words of reasoning), then output ONLY a unified diff patch "
+    "inside a single ```diff fenced code block that resolves the issue. "
+    "Start the patch with 'diff --git' lines. No explanation outside the patch."
 )
 
 
@@ -47,9 +47,10 @@ class _SweBase(SuiteAdapter):
     dataset: str = ""
     dataset_config: str | None = None
     status = "wired"
-    # Thinking models burn most of the budget on reasoning tokens before the
-    # patch; 16k gives the answer room to exist ([finish=length] at 4k).
-    max_tokens = 16384
+    # Thinking models reason for thousands of tokens before the patch;
+    # ornith-35b was still mid-analysis at 16k. 32k gives deep reasoning
+    # plus the answer room (--max-tokens overrides).
+    max_tokens = 32768
 
     SMOKE = [
         ("smoke-1",
@@ -293,43 +294,114 @@ class SweAtlasQnaAdapter(SuiteAdapter):
 
 
 class _TerminalBenchBase(SuiteAdapter):
-    """Terminal-Bench 2.x runs through Harbor (harbor-framework/harbor):
+    """Terminal-Bench 2.x through Harbor, one `harbor run` trial per task.
 
-        harbor run --dataset terminal-bench@2.0 --agent <terminus-2|claude-code>
-
-    Both adapters share the task set; the `--agent` harness differs. The
-    Harbor driver (LM Studio model routing + reward parsing) lands in
-    iteration 4.
+    Both adapters share the task set; the `--agent` harness differs.
+    terminus-2 routes to local LM Studio via `--ak api_base=...`; the
+    claude-code agent shells to the Claude Code CLI and needs
+    ANTHROPIC_API_KEY (or an ANTHROPIC_BASE_URL shim).
     """
 
     category = "coding"
-    status = "scaffold"
+    status = "wired"
     harbor_agent = ""
 
     def requirements(self):
-        return [
-            Requirement("cli", "harbor", "Harbor runner (harbor-framework/harbor)"),
+        reqs = [
+            Requirement("cli", "harbor", "Harbor runner (uv tool install harbor)"),
             Requirement("cli", "docker", "task containers + oracle"),
         ]
+        if self.harbor_agent == "claude-code":
+            reqs.append(Requirement("env", "ANTHROPIC_API_KEY",
+                                    "Claude Code CLI credential"))
+        return reqs
+
+    def _dataset(self) -> str:
+        import os as _os
+
+        # 2.1 is not in the public Harbor registry yet; override with
+        # TB_DATASET=terminal-bench@2.1 when it publishes.
+        return _os.environ.get("TB_DATASET", "terminal-bench@2.0")
+
+    def prepare(self, workdir: Path) -> None:
+        from benchharness.harbor_driver import ensure_dataset
+
+        ensure_dataset(self._dataset())
 
     def tasks(self, limit=None):
-        return [Task(task_id="harbor-driver-pending", prompt="", reference="",
-                     metadata={"skip_reason": f"Harbor driver lands in iteration 4 "
-                               f"(agent={self.harbor_agent})"})]
+        from benchharness.harbor_driver import default_cache_dir, list_tasks
+
+        from benchharness.harbor_driver import dataset_name_version
+
+        name, _ = dataset_name_version(self._dataset())
+        names = list_tasks(default_cache_dir() / name)
+        out = [Task(task_id=n, prompt=f"Terminal-Bench task: {n}", reference="",
+                    metadata={"harbor_task": n, "harbor_dataset": self._dataset()})
+               for n in names]
+        return out[:limit] if limit else out
 
     def score(self, output, task):
-        return Score(passed=False, details="scaffold: Harbor driver pending")
+        # Unused: run_external() bypasses the chat flow entirely.
+        return Score(passed=False, details="harbor trial (see run_external)")
+
+    def run_external(self, task, ctx):
+        import os as _os
+
+        from benchharness.harbor_driver import (
+            build_run_command,
+            parse_job_dir,
+            run_job,
+        )
+
+        config = ctx.get("config")
+        base_url = getattr(config, "base_url", "http://127.0.0.1:1234/v1")
+        timeout = float(getattr(config, "harbor_timeout_secs", 1800.0))
+        model = str(ctx.get("model", ""))
+        workdir: Path = ctx["workdir"]
+        jobs_dir = workdir / "harbor-jobs"
+        jobs_dir.mkdir(parents=True, exist_ok=True)
+        job_name = f"{self.name}-{task.task_id}".replace("/", "_")[:80]
+
+        agent_kwargs: dict[str, str] = {}
+        agent_env: dict[str, str] = {}
+        harbor_model = model
+        if self.harbor_agent == "terminus-2":
+            agent_kwargs["api_base"] = base_url
+            if not model.startswith("openai/"):
+                harbor_model = f"openai/{model}"
+            agent_env["OPENAI_API_KEY"] = getattr(config, "api_key", "lm-studio")
+        elif self.harbor_agent == "claude-code":
+            if _os.environ.get("ANTHROPIC_API_KEY"):
+                agent_env["ANTHROPIC_API_KEY"] = _os.environ["ANTHROPIC_API_KEY"]
+
+        cmd = build_run_command(
+            self._dataset(), self.harbor_agent, harbor_model, jobs_dir, job_name,
+            include_task=task.metadata.get("harbor_task", task.task_id),
+            n_tasks=1,
+            agent_kwargs=agent_kwargs, agent_env=agent_env,
+        )
+        returncode, tail = run_job(cmd, timeout)
+        outcomes = parse_job_dir(jobs_dir / job_name)
+        if not outcomes:
+            return tail, Score(passed=False, score=0.0,
+                               details=f"no trial results (rc={returncode})")
+        oc = outcomes[0]
+        if oc.error:
+            return tail, Score(passed=False, score=0.0,
+                               details=f"trial error: {oc.error}")
+        return tail, Score(passed=oc.passed, score=oc.score,
+                           details=f"rewards={oc.rewards} ({oc.seconds:.0f}s)")
 
 
 class TbTerminusAdapter(_TerminalBenchBase):
     name = "tb-terminus"
-    description = "Terminal-Bench 2.1 via Terminus-2 harness (Harbor)"
+    description = "Terminal-Bench 2.x via Terminus-2 harness (Harbor, LM Studio-routed)"
     source = "harbor run --dataset terminal-bench@2.x --agent terminus-2"
     harbor_agent = "terminus-2"
 
 
 class TbClaudeAdapter(_TerminalBenchBase):
     name = "tb-claude"
-    description = "Terminal-Bench 2.1 via Claude Code harness (Harbor)"
+    description = "Terminal-Bench 2.x via Claude Code harness (Harbor, needs API key)"
     source = "harbor run --dataset terminal-bench@2.x --agent claude-code"
     harbor_agent = "claude-code"

@@ -54,11 +54,12 @@ class BenchConfig:
     model: str | None = None
     temperature: float = 0.0
     connect_timeout_secs: float = 2.0
-    request_timeout_secs: float = 300.0
+    request_timeout_secs: float = 900.0
     max_retries: int = 3
     jobs: int = 4
     max_tokens_override: int | None = None
     per_task_timeout_secs: float = 600.0
+    harbor_timeout_secs: float = 1800.0
     out_dir: Path = field(default_factory=lambda: Path("bench-results"))
     source_file: str | None = None
 
@@ -101,10 +102,13 @@ class BenchConfig:
             )
         except ValueError:
             cfg.connect_timeout_secs = 2.0
-        cfg.request_timeout_secs = float(lm.get("request_timeout_secs", 300.0))
+        cfg.request_timeout_secs = float(lm.get("request_timeout_secs", 900.0))
         cfg.temperature = float(lm.get("temperature", 0.0))
         cfg.max_retries = int(lm.get("max_retries", 3))
         cfg.jobs = int(run.get("jobs", 4))
+        cfg.harbor_timeout_secs = float(
+            os.environ.get("BENCH_HARBOR_TIMEOUT", run.get("harbor_timeout_secs", 1800.0))
+        )
         mt = _nonblank(os.environ.get("BENCH_MAX_TOKENS")) or run.get("max_tokens")
         cfg.max_tokens_override = int(mt) if mt is not None else None
         cfg.per_task_timeout_secs = float(run.get("per_task_timeout_secs", 600.0))

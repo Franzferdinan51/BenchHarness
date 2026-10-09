@@ -67,15 +67,38 @@ def evaluate_task(
     model: str,
     run_id: str,
     config: BenchConfig | None = None,
+    workdir: Path | None = None,
 ) -> TaskResult:
     if task.metadata.get("skip_reason"):
         return TaskResult(run_id=run_id, model=model, suite=adapter.name,
                           task_id=task.task_id, passed=False, status="skipped",
                           error=str(task.metadata["skip_reason"]))
     started = time.monotonic()
+    hook = getattr(adapter, "run_external", None)
+    if callable(hook):
+        try:
+            ctx = {"model": model, "config": config, "run_id": run_id,
+                   "workdir": workdir or Path.cwd()}
+            ext = hook(task, ctx)
+            if ext is not None:
+                excerpt, score = ext
+                return TaskResult(
+                    run_id=run_id, model=model, suite=adapter.name,
+                    task_id=task.task_id, passed=score.passed, score=score.score,
+                    latency_ms=int((time.monotonic() - started) * 1000),
+                    details=score.details, output_excerpt=(excerpt or "")[:500],
+                )
+        except Exception as exc:
+            return TaskResult(
+                run_id=run_id, model=model, suite=adapter.name, task_id=task.task_id,
+                passed=False, status="error",
+                error=f"external run failed: {type(exc).__name__}: {exc}",
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
     cap = effective_max_tokens(config, adapter)
     try:
         finish = ""
+        reasoning = ""
         if task.metadata.get("tool_loop") == "run_python":
             output, pt, ct = run_tool_loop(client, adapter, task, model, cap)
         else:
@@ -83,6 +106,7 @@ def evaluate_task(
             output = client.extract_text(resp)
             pt, ct = client.extract_usage(resp)
             finish = client.extract_finish_reason(resp)
+            reasoning = client.extract_reasoning(resp)
         score = adapter.score(output, task)
         details = score.details
         if finish and finish != "stop":
@@ -94,6 +118,7 @@ def evaluate_task(
             prompt_tokens=pt, completion_tokens=ct,
             details=details,
             output_excerpt=output[:500],
+            reasoning_excerpt=reasoning[-500:] if reasoning else "",
         )
     except Exception as exc:  # per-task isolation: record, don't crash the run
         return TaskResult(
@@ -161,7 +186,9 @@ def run_suites(
 
         def _one(item: tuple[SuiteAdapter, Task]) -> TaskResult:
             adapter, task = item
-            res = evaluate_task(client, adapter, task, model, run_id, config)
+            workdir = run_dir / "work" / adapter.name
+            workdir.mkdir(parents=True, exist_ok=True)
+            res = evaluate_task(client, adapter, task, model, run_id, config, workdir)
             if progress_cb:
                 progress_cb(res)
             return res

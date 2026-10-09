@@ -82,6 +82,15 @@ class SuiteAdapter(ABC):
     def prepare(self, workdir: Path) -> None:
         """Optional per-run setup (download data, build images). No-op default."""
 
+    def run_external(self, task: Task, ctx: dict) -> tuple[str, Score] | None:
+        """External execution hook (Harbor/docker loops).
+
+        Return (output_excerpt, Score) to bypass the chat flow, or None to
+        use the standard prompt -> chat -> score path. ctx carries model,
+        config, workdir, run_id.
+        """
+        return None
+
     @abstractmethod
     def tasks(self, limit: int | None = None) -> list[Task]:
         ...
